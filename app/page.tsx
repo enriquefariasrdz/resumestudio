@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas-pro';
+import { jsPDF } from 'jspdf';
 
 interface ExperienceItem {
   id: string;
@@ -59,7 +61,7 @@ const TEMPLATE_LAYOUTS = [
 ];
 
 export default function App() {
-  const STORAGE_KEY = 'resume_studio_data_v27';
+  const STORAGE_KEY = 'resume_studio_data_v38';
 
   const [currentNav, setCurrentNav] = useState<NavTab>('RESUMES');
 
@@ -180,22 +182,30 @@ export default function App() {
   ]);
 
   const [selectedFontSize, setSelectedFontSize] = useState('12');
-  const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right' | 'justify'>('left');
-  const [highlightColor, setHighlightColor] = useState('#fef08a');
+  const [textAlign] = useState<'left' | 'center' | 'right' | 'justify'>('left');
+  const [highlightColor] = useState('transparent');
 
   const [activeTemplate, setActiveTemplate] = useState<number>(1);
   const [accentColor, setAccentColor] = useState<string>('#0f766e');
-  const [activeTemplateSubTab, setActiveTemplateSubTab] = useState<'styling' | 'layouts'>('styling');
 
-  const [activeDrawerTab, setActiveDrawerTab] = useState<'templates' | 'fields'>('templates');
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'Saved' | 'Saving...'>('Saved');
 
-  const [selectedRewriteStyle, setSelectedRewriteStyle] = useState<string>('Executive');
-  const [isRewriting, setIsRewriting] = useState(false);
-  const [isAuditing, setIsAuditing] = useState(false);
+  // Granular AI Rewriter states
+  const [summaryStyle, setSummaryStyle] = useState<string>('Executive');
+  const [isRewritingSummary, setIsRewritingSummary] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [roleStyles, setRoleStyles] = useState<{ [key: string]: string }>({});
+  const [rewritingRoleKey, setRewritingRoleKey] = useState<string | null>(null);
+
+  const [bulletStyles, setBulletStyles] = useState<{ [key: string]: string }>({});
+  const [rewritingBulletKey, setRewritingBulletKey] = useState<string | null>(null);
+
+  // Export State flag to toggle input fields to plain text during canvas rendering
+  const [isExporting, setIsExporting] = useState(false);
+  const [isExportingDocx, setIsExportingDocx] = useState(false);
+
+  const resumeRef = useRef<HTMLDivElement>(null);
   const currentTemplateObj = TEMPLATE_LAYOUTS.find((t) => t.id === activeTemplate) || TEMPLATE_LAYOUTS[0];
 
   useEffect(() => {
@@ -248,11 +258,137 @@ export default function App() {
   };
 
   const handleRewriteSummary = () => {
-    setIsRewriting(true);
+    setIsRewritingSummary(true);
     setTimeout(() => {
-      setSummary(`Senior SRE & Cloud Architect (${selectedRewriteStyle} tone) leading resilient infrastructure deployments across GCP and Kubernetes, driving high-severity incident mitigation and enterprise reliability.`);
-      setIsRewriting(false);
+      setSummary(`Senior SRE & Cloud Architect leading resilient infrastructure deployments across GCP and Kubernetes, driving high-severity incident mitigation and enterprise reliability.`);
+      setIsRewritingSummary(false);
     }, 400);
+  };
+
+  const handleRewriteEntirePosition = (id: string) => {
+    setRewritingRoleKey(id);
+    setTimeout(() => {
+      setExperiences((prev) =>
+        prev.map((exp) => {
+          if (exp.id === id) {
+            return {
+              ...exp,
+              bullets: exp.bullets.map((b) => `Optimized engineering delivery for enterprise workloads: ${b}`),
+            };
+          }
+          return exp;
+        })
+      );
+      setRewritingRoleKey(null);
+    }, 400);
+  };
+
+  const handleRewriteSingleBullet = (expId: string, bIndex: number) => {
+    const key = `${expId}-${bIndex}`;
+    setRewritingBulletKey(key);
+    setTimeout(() => {
+      setExperiences((prev) =>
+        prev.map((exp) => {
+          if (exp.id === expId) {
+            const newBullets = [...exp.bullets];
+            newBullets[bIndex] = `${newBullets[bIndex]}`;
+            return { ...exp, bullets: newBullets };
+          }
+          return exp;
+        })
+      );
+      setRewritingBulletKey(null);
+    }, 300);
+  };
+
+  const handleExportPDF = async () => {
+    const element = resumeRef.current;
+    if (!element) return;
+
+    setIsExporting(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('resume-preview-container');
+          if (clonedElement) {
+            clonedElement.style.colorScheme = 'light';
+            clonedElement.style.backgroundColor = '#ffffff';
+            clonedElement.style.color = '#0f172a';
+          }
+          
+          const style = clonedDoc.createElement('style');
+          style.innerHTML = `
+            * {
+              color-scheme: light !important;
+            }
+          `;
+          clonedDoc.head.appendChild(style);
+
+          const ignoredElements = clonedDoc.querySelectorAll('[data-html2canvas-ignore]');
+          ignoredElements.forEach((el) => el.remove());
+        },
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${fullName.replace(/\s+/g, '_')}_Resume.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportDocx = () => {
+    setIsExportingDocx(true);
+    setTimeout(() => {
+      const htmlContent = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><title>${fullName} Resume</title><meta charset='utf-8'></head>
+        <body style="font-family: Calibri, sans-serif;">
+          <h1>${fullName}</h1>
+          <h3>${targetRole}</h3>
+          <p><strong>Contact:</strong> ${contactInfo}</p>
+          <hr/>
+          <h2>Professional Summary</h2>
+          <p>${summary}</p>
+          <h2>Work History</h2>
+          ${experiences
+            .map(
+              (e) => `
+              <div>
+                <h3>${e.role} — <em>${e.company}</em> (${e.dates})</h3>
+                <ul>
+                  ${e.bullets.map((b) => `<li>${b}</li>`).join('')}
+                </ul>
+              </div>
+            `
+            )
+            .join('')}
+        </body>
+        </html>
+      `;
+      const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fullName.replace(/\s+/g, '_')}_Resume.doc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setIsExportingDocx(false);
+    }, 600);
   };
 
   const renderDynamicTemplate = () => {
@@ -263,70 +399,170 @@ export default function App() {
     const isBrutalist = activeTemplate === 5;
 
     return (
-      <div className={`space-y-6 ${fontClass}`} style={{ textAlign: isCentered ? 'center' : textAlign }}>
+      <div className={`space-y-6 ${fontClass}`} style={{ textAlign: isCentered ? 'center' : textAlign, color: '#0f172a' }}>
+        {/* Header Section */}
         {isSplit ? (
           <div className="border-b-2 pb-5 flex justify-between items-start" style={{ borderColor: accentColor }}>
             <div>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
-              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
+              {isExporting ? (
+                <div className="text-3xl font-black tracking-tight" style={{ color: accentColor }}>{fullName}</div>
+              ) : (
+                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
+              )}
+              {isExporting ? (
+                <div className="text-sm font-bold text-slate-700 mt-1">{targetRole}</div>
+              ) : (
+                <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
+              )}
             </div>
             <div className="text-right">
-              <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-500 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-64 resize-none" />
+              {isExporting ? (
+                <div className="text-[11px] text-slate-600 font-mono">{contactInfo}</div>
+              ) : (
+                <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-64 resize-none" />
+              )}
             </div>
           </div>
         ) : isCentered ? (
           <div className="border-b-2 pb-5 text-center" style={{ borderColor: accentColor }}>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full" style={{ color: accentColor }} />
-            <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full mt-1" />
-            <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-500 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full mt-2 text-center resize-none" />
+            {isExporting ? (
+              <div className="text-3xl font-black tracking-tight text-center" style={{ color: accentColor }}>{fullName}</div>
+            ) : (
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full" style={{ color: accentColor }} />
+            )}
+            {isExporting ? (
+              <div className="text-sm font-bold text-slate-700 text-center mt-1">{targetRole}</div>
+            ) : (
+              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full mt-1" />
+            )}
+            {isExporting ? (
+              <div className="text-[11px] text-slate-600 font-mono text-center mt-2">{contactInfo}</div>
+            ) : (
+              <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full mt-2 text-center resize-none" />
+            )}
           </div>
         ) : isTerminal ? (
-          <div className="bg-slate-900 text-emerald-400 p-6 rounded-xl border-2 border-emerald-500 font-mono space-y-2 shadow-lg">
-            <div className="text-xs text-slate-400">$ whoami --target-role</div>
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-2xl font-black bg-transparent border-b border-dashed border-emerald-600 text-emerald-300 outline-none w-full" />
-            <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-xs text-cyan-400 bg-transparent border border-dashed border-slate-700 p-1 w-full" />
-            <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[10px] text-slate-300 bg-transparent border border-dashed border-slate-700 p-1 w-full" />
+          <div className="bg-[#0f172a] text-[#34d399] p-6 rounded-xl border-2 border-[#10b981] font-mono space-y-2 shadow-lg">
+            <div className="text-xs text-[#94a3b8]">$ whoami --target-role</div>
+            {isExporting ? (
+              <div className="text-2xl font-black text-[#6ee7b7]">{fullName}</div>
+            ) : (
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-2xl font-black bg-transparent border-b border-dashed border-[#059669] text-[#6ee7b7] outline-none w-full" />
+            )}
+            {isExporting ? (
+              <div className="text-xs text-[#38bdf8]">{targetRole}</div>
+            ) : (
+              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-xs text-[#38bdf8] bg-transparent border border-dashed border-[#334155] p-1 w-full" />
+            )}
+            {isExporting ? (
+              <div className="text-[10px] text-[#cbd5e1]">{contactInfo}</div>
+            ) : (
+              <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[10px] text-[#cbd5e1] bg-transparent border border-dashed border-[#334155] p-1 w-full" />
+            )}
           </div>
         ) : isBrutalist ? (
-          <div className="border-4 border-black p-5 bg-yellow-50 space-y-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black uppercase tracking-wider bg-transparent border-b-2 border-black outline-none w-full" />
-            <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-extrabold uppercase text-black bg-transparent w-full" />
-            <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-xs font-mono bg-white border-2 border-black p-1 w-full" />
+          <div className="border-4 border-[#000000] p-5 bg-[#fefce8] space-y-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            {isExporting ? (
+              <div className="text-3xl font-black uppercase tracking-wider text-[#000000]">{fullName}</div>
+            ) : (
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black uppercase tracking-wider bg-transparent border-b-2 border-[#000000] outline-none w-full text-[#000000]" />
+            )}
+            {isExporting ? (
+              <div className="text-sm font-extrabold uppercase text-[#000000]">{targetRole}</div>
+            ) : (
+              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-extrabold uppercase text-[#000000] bg-transparent w-full" />
+            )}
+            {isExporting ? (
+              <div className="text-xs font-mono text-[#000000]">{contactInfo}</div>
+            ) : (
+              <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-xs font-mono bg-[#ffffff] border-2 border-[#000000] p-1 w-full text-[#000000]" />
+            )}
           </div>
         ) : (
           <div className="border-b-2 pb-5 flex justify-between items-end" style={{ borderColor: accentColor }}>
             <div>
-              <div className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase mb-1 text-white" style={{ backgroundColor: accentColor }}>
+              <div className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase mb-1 text-[#ffffff]" style={{ backgroundColor: accentColor }}>
                 {currentTemplateObj.name}
               </div>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
-              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
+              {isExporting ? (
+                <div className="text-3xl font-black tracking-tight" style={{ color: accentColor }}>{fullName}</div>
+              ) : (
+                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
+              )}
+              {isExporting ? (
+                <div className="text-sm font-bold text-slate-700 mt-1">{targetRole}</div>
+              ) : (
+                <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
+              )}
             </div>
             <div className="text-right max-w-[300px]">
-              <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-500 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full resize-none" />
+              {isExporting ? (
+                <div className="text-[11px] text-slate-600 font-mono">{contactInfo}</div>
+              ) : (
+                <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full resize-none" />
+              )}
             </div>
           </div>
         )}
 
-        <div className="space-y-2 bg-slate-50/80 p-4 rounded-xl border border-slate-200 shadow-xs">
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 border-l-4 pl-2" style={{ borderColor: accentColor }}>
-            Professional Summary
-          </h3>
-          <textarea
-            rows={3}
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            className="w-full text-slate-700 bg-transparent border border-dashed border-slate-300 focus:border-blue-600 outline-none p-2 rounded leading-relaxed resize-y"
-            style={{ fontSize: `${selectedFontSize}px`, backgroundColor: highlightColor === 'transparent' ? 'transparent' : highlightColor + '20' }}
-          />
+        {/* Professional Summary Section */}
+        <div className={`space-y-3 ${isExporting ? 'bg-transparent p-0 border-none' : 'bg-slate-50 p-4 rounded-xl border border-slate-200'} shadow-xs`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 border-l-4 pl-2" style={{ borderColor: accentColor }}>
+              Professional Summary
+            </h3>
+            <span data-html2canvas-ignore className="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+              ✨ Section AI Writer
+            </span>
+          </div>
+
+          {isExporting ? (
+            <p className="text-slate-800 leading-relaxed" style={{ fontSize: `${selectedFontSize}px` }}>{summary}</p>
+          ) : (
+            <textarea
+              rows={3}
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              className="w-full text-slate-800 bg-white border border-dashed border-slate-300 focus:border-blue-600 outline-none p-2 rounded leading-relaxed resize-y shadow-xs"
+              style={{ fontSize: `${selectedFontSize}px`, backgroundColor: highlightColor === 'transparent' ? '#ffffff' : highlightColor }}
+            />
+          )}
+
+          {/* AI Controls Box - Hidden during export */}
+          <div data-html2canvas-ignore className="bg-white p-3 rounded-lg border border-blue-200 shadow-xs space-y-2">
+            <label className="text-[11px] font-bold text-blue-900 uppercase tracking-wide block">
+              ✨ Rewrite Summary Section Tone
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {WRITING_STYLES.map((style) => (
+                <button
+                  key={style.name}
+                  onClick={() => setSummaryStyle(style.name)}
+                  className={`text-left p-2 rounded-lg border text-xs transition ${summaryStyle === style.name ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-xs' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                >
+                  <div className="font-semibold">{style.name}</div>
+                  <div className="text-[9px] text-slate-500 truncate">{style.desc}</div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleRewriteSummary}
+              disabled={isRewritingSummary}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg shadow transition mt-1"
+            >
+              {isRewritingSummary ? 'Rewriting Summary...' : `Rewrite Summary in "${summaryStyle}" Style`}
+            </button>
+          </div>
         </div>
 
+        {/* Work History Section */}
         <div className="space-y-4 pt-2">
           <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: accentColor }}>
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-              Work History ({experiences.length} Positions Active - Fluid Multi-Page Support)
+              Work History
             </h3>
             <button
+              data-html2canvas-ignore
               onClick={handleAddExperience}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] rounded-lg shadow transition"
             >
@@ -334,59 +570,131 @@ export default function App() {
             </button>
           </div>
 
-          {experiences.map((exp, expIdx) => (
-            <div key={exp.id || expIdx} className="space-y-2 mb-4 p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-              <div className="flex justify-between items-center gap-2">
-                <div className="flex-1 grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={exp.role}
-                    onChange={(e) => handleUpdateExperience(exp.id, 'role', e.target.value)}
-                    className="text-xs font-extrabold text-slate-900 bg-transparent border border-dashed border-slate-300 p-1 rounded"
-                  />
-                  <input
-                    type="text"
-                    value={exp.company}
-                    onChange={(e) => handleUpdateExperience(exp.id, 'company', e.target.value)}
-                    className="text-xs font-semibold text-slate-600 bg-transparent border border-dashed border-slate-300 p-1 rounded"
-                  />
+          {experiences.map((exp, expIdx) => {
+            const currentRoleStyle = roleStyles[exp.id] || 'Executive';
+            return (
+              <div key={exp.id || expIdx} className={`space-y-3 mb-5 ${isExporting ? 'bg-transparent p-0 border-none shadow-none' : 'p-4 rounded-xl bg-white border border-slate-200 shadow-xs'}`}>
+                <div className="flex justify-between items-center gap-2">
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    {isExporting ? (
+                      <div className="text-xs font-extrabold text-slate-900">{exp.role}</div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={exp.role}
+                        onChange={(e) => handleUpdateExperience(exp.id, 'role', e.target.value)}
+                        className="text-xs font-extrabold text-slate-900 bg-transparent border border-dashed border-slate-300 p-1 rounded"
+                      />
+                    )}
+                    {isExporting ? (
+                      <div className="text-xs font-semibold text-slate-700">{exp.company}</div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={exp.company}
+                        onChange={(e) => handleUpdateExperience(exp.id, 'company', e.target.value)}
+                        className="text-xs font-semibold text-slate-700 bg-transparent border border-dashed border-slate-300 p-1 rounded"
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isExporting ? (
+                      <div className="text-[11px] font-mono font-semibold px-2 py-0.5 text-slate-800">{exp.dates}</div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={exp.dates}
+                        onChange={(e) => handleUpdateExperience(exp.id, 'dates', e.target.value)}
+                        className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 w-36 text-center"
+                      />
+                    )}
+                    <button
+                      data-html2canvas-ignore
+                      onClick={() => handleRemoveExperience(exp.id)}
+                      className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded bg-red-50"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={exp.dates}
-                    onChange={(e) => handleUpdateExperience(exp.id, 'dates', e.target.value)}
-                    className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 w-36 text-center"
-                  />
+
+                {/* Role AI Rewriter Tool - Hidden from export */}
+                <div data-html2canvas-ignore className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-700 text-[11px]">✨ Rewrite Whole Role:</span>
+                    <select
+                      value={currentRoleStyle}
+                      onChange={(e) => setRoleStyles({ ...roleStyles, [exp.id]: e.target.value })}
+                      className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white font-medium text-slate-800"
+                    >
+                      {WRITING_STYLES.map((st) => (
+                        <option key={st.name} value={st.name}>{st.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <button
-                    onClick={() => handleRemoveExperience(exp.id)}
-                    className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded bg-red-50"
+                    onClick={() => handleRewriteEntirePosition(exp.id)}
+                    disabled={rewritingRoleKey === exp.id}
+                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded shadow-xs transition text-[11px]"
                   >
-                    ✕
+                    {rewritingRoleKey === exp.id ? 'Rewriting Experience...' : `Rewrite Experience Position`}
                   </button>
                 </div>
-              </div>
 
-              <div className="space-y-1.5 pt-2">
-                {exp.bullets.map((bullet, bIdx) => (
-                  <div key={bIdx} className="flex items-center gap-2">
-                    <span className="text-slate-400 text-xs">•</span>
-                    <input
-                      type="text"
-                      value={bullet}
-                      onChange={(e) => {
-                        const newBullets = [...exp.bullets];
-                        newBullets[bIdx] = e.target.value;
-                        handleUpdateExperience(exp.id, 'bullets', newBullets);
-                      }}
-                      className="flex-1 text-slate-700 bg-transparent border border-dashed border-slate-200 p-1 rounded"
-                      style={{ fontSize: `${selectedFontSize}px` }}
-                    />
-                  </div>
-                ))}
+                <div className="space-y-2 pt-1">
+                  {exp.bullets.map((bullet, bIdx) => {
+                    const bulletKey = `${exp.id}-${bIdx}`;
+                    const currentBulletStyle = bulletStyles[bulletKey] || 'Direct';
+                    return (
+                      <div key={bIdx} className={`${isExporting ? 'bg-transparent p-0 border-none' : 'p-2.5 rounded-lg bg-slate-50 border border-slate-200'} space-y-2`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 text-xs font-bold">•</span>
+                          {isExporting ? (
+                            <div className="flex-1 text-slate-800" style={{ fontSize: `${selectedFontSize}px` }}>{bullet}</div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={bullet}
+                              onChange={(e) => {
+                                const newBullets = [...exp.bullets];
+                                newBullets[bIdx] = e.target.value;
+                                handleUpdateExperience(exp.id, 'bullets', newBullets);
+                              }}
+                              className="flex-1 text-slate-800 bg-white border border-dashed border-slate-300 p-1.5 rounded shadow-xs"
+                              style={{ fontSize: `${selectedFontSize}px` }}
+                            />
+                          )}
+                        </div>
+
+                        {/* Bullet Statement AI Toolbar - Hidden from export */}
+                        <div data-html2canvas-ignore className="flex items-center justify-between pl-4 text-[10px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-500 font-medium">✨ Rewrite Statement:</span>
+                            <select
+                              value={currentBulletStyle}
+                              onChange={(e) => setBulletStyles({ ...bulletStyles, [bulletKey]: e.target.value })}
+                              className="border border-slate-300 rounded px-1.5 py-0.5 bg-white text-slate-800 font-medium"
+                            >
+                              {WRITING_STYLES.map((st) => (
+                                <option key={st.name} value={st.name}>{st.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => handleRewriteSingleBullet(exp.id, bIdx)}
+                            disabled={rewritingBulletKey === bulletKey}
+                            className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-xs transition"
+                          >
+                            {rewritingBulletKey === bulletKey ? 'Rewriting...' : 'Rewrite Statement'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -394,7 +702,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-100 text-slate-800 font-sans overflow-hidden">
-      <header className="bg-[#0a192f] text-white px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
+      <header className="bg-[#0a192f] text-[#ffffff] px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-1 font-black text-xl tracking-tight">
             <span className="text-blue-500">resume</span>studio
@@ -404,7 +712,7 @@ export default function App() {
               <button
                 key={tab}
                 onClick={() => setCurrentNav(tab)}
-                className={`pb-1 border-b-2 transition ${currentNav === tab ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                className={`pb-1 border-b-2 transition ${currentNav === tab ? 'border-blue-500 text-[#ffffff]' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
               >
                 {tab}
               </button>
@@ -440,140 +748,118 @@ export default function App() {
             </div>
           </div>
 
-          <div className="ml-auto">
+          <div className="flex items-center gap-2 ml-auto">
             <button
-              onClick={() => setIsAuditing(!isAuditing)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow"
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-[#ffffff] font-bold rounded-lg shadow transition flex items-center gap-1.5"
             >
-              {isAuditing ? 'Scanning...' : 'Run ATS Audit'}
+              <span>📥</span> {isExporting ? 'Exporting PDF...' : 'Export PDF'}
+            </button>
+            <button
+              onClick={handleExportDocx}
+              disabled={isExportingDocx}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-[#ffffff] font-bold rounded-lg shadow transition flex items-center gap-1.5"
+            >
+              <span>📄</span> {isExportingDocx ? 'Exporting Word...' : 'Export Word'}
             </button>
           </div>
         </div>
       )}
 
-      {currentNav === 'RESUMES' && (
-        <div className="flex-1 flex overflow-hidden relative">
-          <div className="w-20 bg-white border-r border-slate-300 flex flex-col items-center py-4 gap-6 shrink-0 z-20">
-            <button
-              onClick={() => { setActiveDrawerTab('templates'); setIsDrawerOpen(true); }}
-              className="flex flex-col items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800"
-            >
-              <div className="p-2.5 rounded-xl bg-slate-100">📄</div>
-              Templates
-            </button>
-            <button
-              onClick={() => { setActiveDrawerTab('fields'); setIsDrawerOpen(true); }}
-              className="flex flex-col items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800"
-            >
-              <div className="p-2.5 rounded-xl bg-slate-100">✏️</div>
-              Content
-            </button>
-          </div>
+      <div className="flex-1 flex overflow-hidden">
+        {currentNav === 'RESUMES' && (
+          <aside className={`${isDrawerOpen ? 'w-96' : 'w-16'} bg-slate-900 border-r border-slate-800 text-[#ffffff] flex flex-col transition-all duration-300 shrink-0`}>
+            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+              {isDrawerOpen && <span className="text-xs font-bold tracking-wider uppercase text-slate-400">Template Customizer</span>}
+              <button
+                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+              >
+                {isDrawerOpen ? '◀' : '▶'}
+              </button>
+            </div>
 
-          {isDrawerOpen && (
-            <div className="w-[440px] bg-white border-r border-slate-300 flex flex-col h-full shrink-0 z-10 shadow-xl">
-              <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                <h2 className="font-bold text-slate-800 text-sm uppercase tracking-wider">Templates & Styling</h2>
-                <button onClick={() => setIsDrawerOpen(false)} className="text-slate-400 hover:text-slate-700 text-sm font-bold px-2">✕</button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                <div className="flex bg-slate-100 p-1 rounded-xl">
-                  <button
-                    onClick={() => setActiveTemplateSubTab('styling')}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${activeTemplateSubTab === 'styling' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-                  >
-                    1. Colors & AI Rewriter
-                  </button>
-                  <button
-                    onClick={() => setActiveTemplateSubTab('layouts')}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${activeTemplateSubTab === 'layouts' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}
-                  >
-                    2. Choose Template
-                  </button>
+            {isDrawerOpen && (
+              <div className="flex-1 overflow-y-auto p-4 space-y-6 text-xs">
+                <div className="space-y-3">
+                  <label className="font-extrabold uppercase tracking-wider text-slate-400 block">
+                    Template Styles (10 Layouts)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {TEMPLATE_LAYOUTS.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setActiveTemplate(t.id)}
+                        className={`p-2.5 rounded-lg border text-left transition ${activeTemplate === t.id ? 'border-blue-500 bg-blue-950/60 text-[#ffffff] font-bold ring-1 ring-blue-500' : 'border-slate-800 bg-slate-800/50 text-slate-300 hover:bg-slate-800'}`}
+                      >
+                        <div className="text-[11px] font-semibold">{t.name}</div>
+                        <div className="text-[9px] text-slate-400 mt-0.5 truncate">{t.desc}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {activeTemplateSubTab === 'styling' && (
-                  <div className="space-y-6">
-                    <div className="space-y-3">
-                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Color Theme</label>
-                      <div className="grid grid-cols-5 gap-3">
-                        {COLOR_PALETTES.map((col) => (
-                          <button
-                            key={col.hex}
-                            onClick={() => setAccentColor(col.hex)}
-                            className={`h-11 w-11 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110 shadow-xs mx-auto ${accentColor === col.hex ? 'border-slate-900 ring-2 ring-blue-600 scale-105' : 'border-slate-200'}`}
-                            style={{ backgroundColor: col.hex }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 pt-3 border-t border-slate-200">
-                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">✨ AI Writing Style Rewriter</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {WRITING_STYLES.map((style) => (
-                          <button
-                            key={style.name}
-                            onClick={() => setSelectedRewriteStyle(style.name)}
-                            className={`text-left p-2.5 rounded-xl border text-xs transition ${selectedRewriteStyle === style.name ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-xs' : 'border-slate-200 bg-white text-slate-700'}`}
-                          >
-                            {style.name}
-                          </button>
-                        ))}
-                      </div>
+                <div className="space-y-3 border-t border-slate-800 pt-4">
+                  <label className="font-extrabold uppercase tracking-wider text-slate-400 block">
+                    Accent Color Palette (20 Options)
+                  </label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {COLOR_PALETTES.map((cp) => (
                       <button
-                        onClick={handleRewriteSummary}
-                        disabled={isRewriting}
-                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow transition mt-2"
-                      >
-                        {isRewriting ? 'Rewriting...' : `Rewrite Summary in "${selectedRewriteStyle}" Style`}
-                      </button>
-                    </div>
+                        key={cp.name}
+                        onClick={() => setAccentColor(cp.hex)}
+                        title={cp.name}
+                        className={`h-8 rounded-lg border transition ${accentColor === cp.hex ? 'border-[#ffffff] scale-110 shadow-lg ring-2 ring-white/50' : 'border-transparent hover:scale-105'}`}
+                        style={{ backgroundColor: cp.hex }}
+                      />
+                    ))}
                   </div>
-                )}
+                </div>
+              </div>
+            )}
+          </aside>
+        )}
 
-                {activeTemplateSubTab === 'layouts' && (
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Select Template Layout</label>
-                    <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-2">
-                      {TEMPLATE_LAYOUTS.map((tpl) => (
-                        <button
-                          key={tpl.id}
-                          onClick={() => setActiveTemplate(tpl.id)}
-                          className={`w-full text-left p-3.5 rounded-xl border transition flex flex-col gap-1 ${activeTemplate === tpl.id ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-600 shadow-sm' : 'border-slate-200 hover:bg-slate-50'}`}
-                        >
-                          <span className="text-xs font-extrabold text-slate-900">{tpl.name}</span>
-                          <span className="text-[11px] text-slate-500">{tpl.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+        <main className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
+          {currentNav === 'RESUMES' && (
+            <div
+              ref={resumeRef}
+              id="resume-preview-container"
+              className="w-[850px] min-h-[1100px] bg-white text-slate-900 shadow-2xl p-12 rounded-xl border border-slate-300 relative transition-all"
+            >
+              {renderDynamicTemplate()}
+            </div>
+          )}
+
+          {currentNav === 'DASHBOARD' && (
+            <div className="w-full max-w-4xl space-y-6">
+              <div className="bg-white p-6 rounded-xl border border-slate-300 shadow-sm space-y-3">
+                <h2 className="text-lg font-black text-slate-900">Career Studio Dashboard</h2>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Welcome back! Manage your professional documents, target roles, and automated ATS tuning profiles from this central control hub.
+                </p>
               </div>
             </div>
           )}
 
-          {/* Fluid Height Canvas Container */}
-          <div className="flex-1 bg-slate-200 overflow-y-auto p-8 flex justify-center items-start">
-            <div className="bg-white shadow-2xl w-[850px] min-h-full h-auto p-10 text-slate-900 border border-slate-300 mb-12">
-              {renderDynamicTemplate()}
+          {currentNav === 'COVER LETTER' && (
+            <div className="w-full max-w-4xl space-y-6">
+              <div className="bg-white p-6 rounded-xl border border-slate-300 shadow-sm space-y-4">
+                <h2 className="text-lg font-black text-slate-900">Cover Letter Studio</h2>
+                <p className="text-xs text-slate-600">
+                  Generate personalized, high-impact cover letters tailored to your SRE and DevOps experience.
+                </p>
+                <textarea
+                  rows={8}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-xs text-slate-700 outline-none focus:border-blue-600"
+                  defaultValue={`Dear Hiring Manager,\n\nAs a Senior DevOps and SRE professional with extensive leadership in operating mission-critical services on GCP, Azure, and Kubernetes, I am thrilled to apply for the ${targetRole} position...\n\nSincerely,\n${fullName}`}
+                />
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {currentNav === 'DASHBOARD' && (
-        <div className="flex-1 bg-slate-100 p-8">
-          <h1 className="text-xl font-bold">Dashboard</h1>
-        </div>
-      )}
-
-      {currentNav === 'COVER LETTER' && (
-        <div className="flex-1 bg-slate-100 p-8">
-          <h1 className="text-xl font-bold">Cover Letter Generator</h1>
-        </div>
-      )}
+          )}
+        </main>
+      </div>
     </div>
   );
 }
