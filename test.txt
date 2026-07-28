@@ -13,4 +13,4 @@ WITH CHECK (auth.uid() = user_id);
 -- 4. Policy: Admin can view and manage all resumes (replace with your admin email)
 CREATE POLICY "Admin full access" ON "Resume"
 FOR ALL 
-USING (auth.jwt() ->> 'email' = 'enriquefariasrdz@gmail.com');
+USING (auth.jwt() ->> 'email' = 'admin@example.com');
