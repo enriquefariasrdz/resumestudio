@@ -212,53 +212,33 @@ export default function ResumeStudioPage() {
   const [activeTab, setActiveTab] = useState<"editor" | "admin">("editor");
 
   const [resumeData, setResumeData] = useState<any>({
-    name: "Enrique Farias Rodriguez",
-    title: "Site Reliability Engineer",
+    name: "Jane Doe",
+    title: "Product Manager",
     contact: {
-      address: "64630, Monterrey Mexico",
-      phone: "528-118-213655",
-      email: "enriquefariasrdz@gmail.com",
-      website: "https://enriquefariasrdz.wixsite.com/softeng",
+      address: "",
+      phone: "",
+      email: "",
+      website: "",
     },
     summary:
-      "18 Years of Experience on IT Industry: 7 SRE/DevOps, 6 Team Lead Production Support, 5 Team Lead Helpdesk. Experienced SRE with international retail, gaming, and enterprise background managing GCP, AWS, Azure, and Kubernetes.",
+      "Add your professional summary here. This is placeholder sample text for new users.",
     experience: [
       {
-        period: "2021-12 - Current",
-        role: "Senior DevOps Engineer (SRE)",
-        company: "Grid Dynamics - American Eagle Outfitters, Monterrey, Mexico (Remote)",
+        period: "2024 - Present",
+        role: "Senior Product Manager",
+        company: "Example Company, Remote",
         bullets: [
-          "Troubleshoot applications on GCP and on premises, mainly focused on GKE, PubSub, CloudSQL.",
-          "Resolve slowness on the website, add to bag, throughput or bot attacks.",
-          "Provide Correction of Error documentation from the High Severity incidents.",
-          "Create and correct dashboards to determine the website reliability.",
-        ],
-      },
-      {
-        period: "2020-09 - 2021-12",
-        role: "DevOps Engineer",
-        company: "Softtek - Electronic Arts, Guadalajara, Mexico",
-        bullets: [
-          "Worked as Observability Engineer providing accurate and constant metrics to trigger alerts and incidents.",
-          "Managed and sealed SSL certificates with Helm/Kubernetes secrets.",
-          "Integrated new routes to monitor and transmit metrics with RabbitMQ and Graphite apps.",
-        ],
-      },
-      {
-        period: "2018-11 - 2020-03",
-        role: "DevOps Engineer",
-        company: "Softtek - Staples, Guadalajara, Mexico",
-        bullets: [
-          "Designed and implemented Zabbix Monitoring on Azure and on premises, saving 10 million USD per year.",
-          "Deployed components and applications using ARM templates automating on Azure DevOps pipelines.",
+          "Lead product initiatives focused on user experience and reliability.",
+          "Collaborated with engineering and design teams to launch features.",
+          "Improved product metrics through data-driven decision making.",
         ],
       },
     ],
     education: [
       {
-        period: "1998-09 - 2002-01",
-        degree: "BBA: Business Administration of Tourism",
-        institution: "Instituto Regiomontano De Hoteleria AC - Monterrey",
+        period: "2015 - 2019",
+        degree: "Bachelor of Science in Computer Science",
+        institution: "Example University",
       },
     ],
     originalContent: "",
