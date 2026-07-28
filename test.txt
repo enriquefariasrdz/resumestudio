@@ -1,0 +1,16 @@
+-- 1. Add user_id to link resumes to Supabase Auth users
+ALTER TABLE "Resume" ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
+
+-- 2. Enable Row Level Security
+ALTER TABLE "Resume" ENABLE ROW LEVEL SECURITY;
+
+-- 3. Policy: Standard users can only view and manage their own resumes
+CREATE POLICY "Users manage own resumes" ON "Resume"
+FOR ALL 
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 4. Policy: Admin can view and manage all resumes (replace with your admin email)
+CREATE POLICY "Admin full access" ON "Resume"
+FOR ALL 
+USING (auth.jwt() ->> 'email' = 'enriquefariasrdz@gmail.com');

@@ -1,865 +1,1293 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import html2canvas from 'html2canvas-pro';
-import { jsPDF } from 'jspdf';
+import React, { useState, useEffect } from "react";
+import AuthModal from "./components/AuthModal";
+import AdminDashboard from "./components/AdminDashboard";
+import { getAuthSession, signOutUser } from "./actions/authActions";
+import { getResumes, saveResumeVersion, deleteResumeVersion } from "./actions/resumeActions";
+import { UserSessionPayload } from "@/lib/auth";
+import {
+  User as UserIcon,
+  LogOut,
+  Shield,
+  LogIn,
+  Trash2,
+  Plus,
+  Check,
+  FileText,
+  Loader2,
+  Upload,
+  FileUp,
+  Sparkles,
+  LayoutTemplate
+} from "lucide-react";
 
-interface ExperienceItem {
-  id: string;
-  role: string;
-  company: string;
-  location?: string;
-  dates: string;
-  bullets: string[];
-}
+const sectionHeaderRegex = /^(?:PROFILE|SUMMARY|PROFESSIONAL\s+SUMMARY|EXECUTIVE\s+SUMMARY|OBJECTIVE|CAREER\s+SUMMARY|WORK\s+HISTORY|WORK\s+EXPERIENCE|PROFESSIONAL\s+EXPERIENCE|EMPLOYMENT\s+HISTORY|EXPERIENCE|EDUCATION(?:\s*&\s*QUALIFICATIONS)?|EDUCATION\s+&\s+QUALIFICATIONS|SKILLS|TECHNICAL\s+SKILLS|CORE\s+COMPETENCIES|CERTIFICATIONS|CERTIFICATE|PROJECTS|ACHIEVEMENTS|AWARDS|HONORS|LANGUAGES|VOLUNTEER|TRAINING|PROFILE)\b/i;
 
-type NavTab = 'DASHBOARD' | 'RESUMES' | 'COVER LETTER';
+function parseRawTextToResumeFull(rawText: string, fileName: string) {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
 
-const COLOR_PALETTES = [
-  { name: 'Classic Red', hex: '#b91c1c' },
-  { name: 'Slate Dark', hex: '#1e293b' },
-  { name: 'Navy Blue', hex: '#0b2545' },
-  { name: 'Royal Purple', hex: '#6b21a8' },
-  { name: 'Teal Modern', hex: '#0f766e' },
-  { name: 'Ocean Blue', hex: '#0284c7' },
-  { name: 'Emerald Green', hex: '#047857' },
-  { name: 'Warm Amber', hex: '#b45309' },
-  { name: 'Rose Pink', hex: '#be185d' },
-  { name: 'Burgundy Wine', hex: '#831843' },
-  { name: 'Steel Gray', hex: '#334155' },
-  { name: 'Midnight Indigo', hex: '#312e81' },
-  { name: 'Forest Pine', hex: '#14532d' },
-  { name: 'Bronze Gold', hex: '#78350f' },
-  { name: 'Cyber Neon Cyan', hex: '#0e7490' },
-  { name: 'Slate Violet', hex: '#581c87' },
-  { name: 'Sunset Orange', hex: '#c2410c' },
-  { name: 'Classic Charcoal', hex: '#27272a' },
-  { name: 'Deep Teal', hex: '#115e59' },
-  { name: 'Custom Accent', hex: '#2563eb' },
-];
+  if (lines.length === 0) {
+    return {
+      name: "Empty Document",
+      title: "",
+      contact: { address: "", phone: "", email: "", website: "" },
+      summary: "",
+      experience: [],
+      education: [],
+      originalContent: rawText,
+    };
+  }
 
-const WRITING_STYLES = [
-  { name: 'Executive', desc: 'High-level and summary-focused, highlighting key takeaways, ROI, and core business impacts.' },
-  { name: 'Direct', desc: 'Strips away filler words, getting straight to the point with maximum clarity and brevity.' },
-  { name: 'Elegant', desc: 'Refined and sophisticated, utilizing polished vocabulary and graceful sentence structures.' },
-  { name: 'Persuasive', desc: 'Designed to influence perspective, blending logical arguments with confident phrasing.' },
-  { name: 'Authoritative', desc: 'Projects deep subject-matter expertise and confident leadership.' },
-  { name: 'Concise', desc: 'Highly efficient and compact, delivering maximum information in minimal words.' },
-];
+  // Contact details regex extraction
+  const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  const email = emailMatch ? emailMatch[0] : "";
 
-const TEMPLATE_LAYOUTS = [
-  { id: 1, name: 'Modern Minimal', desc: 'Clean left border line with sleek sans-serif typography.', font: 'font-sans' },
-  { id: 2, name: 'Executive Split', desc: 'Two-column header layout optimized for senior leadership.', font: 'font-sans' },
-  { id: 3, name: 'Classic Corporate', desc: 'Traditional centered layout with classic serif accents.', font: 'font-serif' },
-  { id: 4, name: 'Tech Terminal', desc: 'Monospace accent headers styled for SRE & DevOps engineers.', font: 'font-mono' },
-  { id: 5, name: 'Neo Brutalist', desc: 'High-contrast stark borders with bold geometric accents.', font: 'font-sans' },
-  { id: 6, name: 'Silicon Gradient', desc: 'Dynamic gradient header line with contemporary padding.', font: 'font-sans' },
-  { id: 7, name: 'Compact Grid', desc: 'Dense multi-section alignment tailored for long career histories.', font: 'font-sans' },
-  { id: 8, name: 'Academic Researcher', desc: 'Formal academic layout featuring refined serif styling.', font: 'font-serif' },
-  { id: 9, name: 'Startup Pitch', desc: 'Fresh minimalist layout with vibrant accent highlights.', font: 'font-sans' },
-  { id: 10, name: 'Cloud Architect', desc: 'Structured infrastructure-focused layout with technical badge headers.', font: 'font-mono' },
-];
+  const phoneMatch = rawText.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}/);
+  const phone = phoneMatch ? phoneMatch[0] : "";
 
-export default function App() {
-  const STORAGE_KEY = 'resume_studio_data_v38';
+  const urlMatch = rawText.match(/https?:\/\/[^\s]+/);
+  const website = urlMatch ? urlMatch[0] : "";
 
-  const [currentNav, setCurrentNav] = useState<NavTab>('RESUMES');
+  let name = "";
+  let title = "";
 
-  const [fullName, setFullName] = useState('Enrique Farias Rodriguez');
-  const [targetRole, setTargetRole] = useState('Site Reliability Engineer');
-  const [contactInfo, setContactInfo] = useState(
-    '64630, Monterrey Mexico | 528-118-213655 | enriquefariasrdz@gmail.com | WWW: https://enriquefariasrdz.wixsite.com/softeng'
-  );
-  const [summary, setSummary] = useState(
-    'Senior DevOps and SRE professional with extensive multi-year leadership in architecting, automating, and operating mission-critical services on GCP, Azure, and Kubernetes. Proven history of large-scale infrastructure savings, high-severity incident reduction, and advanced observability orchestration.'
-  );
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    const line = lines[i];
+    if (line.includes("@") || line.includes("http") || /curriculum|vitae|resume/i.test(line)) continue;
+    if (!name) {
+      name = line;
+    } else if (!title && line.length < 60) {
+      title = line;
+      break;
+    }
+  }
 
-  const [experiences, setExperiences] = useState<ExperienceItem[]>([
-    {
-      id: '1',
-      role: 'Senior DevOps Engineer (SRE)',
-      company: 'Grid Dynamics - American Eagle Outfitters',
-      location: 'Monterrey, Mexico (Remote)',
-      dates: '2021-12 - Current',
-      bullets: [
-        'Troubleshoot applications on GCP and on premises, mainly focused on GKE, PubSub, CloudSQL.',
-        'Resolve slowness on the website, add to bag, throughput or bot attacks.',
-        'Provide Correction of Error documentation from the High Severity incidents.',
-        'Create and correct dashboards to determine the website reliability.',
-        'Create and enhance alerts to ensure issues are caught on time.',
-        'Follow up SRE ticket queue, coordinating with UI, Engineering, QA, Loyalty, Profile teams.',
-      ],
-    },
-    {
-      id: '2',
-      role: 'DevOps Engineer',
-      company: 'Softtek - Electronic Arts',
-      location: 'Guadalajara, Mexico',
-      dates: '2020-09 - 2021-12',
-      bullets: [
-        'Worked as Observability Engineer providing accurate and constant metrics to trigger alerts and incidents.',
-        'Managed and sealed SSL certificates with Helm/Kubernetes secrets.',
-        'Integrated new routes to monitor and transmit metrics with RabbitMQ and Graphite apps.',
-      ],
-    },
-    {
-      id: '3',
-      role: 'Senior DevOps Specialist',
-      company: 'KIO Networks',
-      location: 'Monterrey, Mexico',
-      dates: '2019-01 - 2020-09',
-      bullets: [
-        'Architected high-availability Kubernetes clusters on client on-premise infrastructure.',
-        'Automated CI/CD workflows using GitLab CI, reducing deployment times by 45%.',
-      ],
-    },
-    {
-      id: '4',
-      role: 'Infrastructure Lead',
-      company: 'Softek - Enterprise Accounts',
-      location: 'Monterrey, Mexico',
-      dates: '2017-06 - 2019-01',
-      bullets: [
-        'Led a team of 6 engineers managing cloud migration initiatives for retail clients.',
-        'Standardized Terraform infrastructure-as-code modules across AWS and Azure.',
-      ],
-    },
-    {
-      id: '5',
-      role: 'Cloud Operations Engineer',
-      company: 'Neoris',
-      location: 'Monterrey, Mexico',
-      dates: '2015-03 - 2017-06',
-      bullets: [
-        'Managed Linux server fleets, patching security vulnerabilities and optimizing kernel performance.',
-        'Configured automated backups and disaster recovery protocols for mission-critical client databases.',
-      ],
-    },
-    {
-      id: '6',
-      role: 'Systems Administrator',
-      company: 'IBM / Global Delivery',
-      location: 'Guadalajara, Mexico',
-      dates: '2013-08 - 2015-03',
-      bullets: [
-        'Provided 24/7 production support and incident management for enterprise UNIX systems.',
-        'Authored comprehensive runbooks and operational documentation to accelerate troubleshooting.',
-      ],
-    },
-    {
-      id: '7',
-      role: 'Technical Support Lead',
-      company: 'HP Enterprise Services',
-      location: 'Guadalajara, Mexico',
-      dates: '2011-05 - 2013-08',
-      bullets: [
-        'Directed escalation handling and technical triage for multinational corporate clients.',
-        'Trained junior support staff on diagnostic methodologies and ticketing best practices.',
-      ],
-    },
-    {
-      id: '8',
-      role: 'IT Infrastructure Specialist',
-      company: 'Oracle Corporation',
-      location: 'Monterrey, Mexico',
-      dates: '2009-02 - 2011-05',
-      bullets: [
-        'Maintained hardware and network configurations across staging and production server rooms.',
-        'Monitored network traffic and resolved connectivity anomalies proactively.',
-      ],
-    },
-    {
-      id: '9',
-      role: 'Junior Systems Engineer',
-      company: 'TCS (Tata Consultancy Services)',
-      location: 'Monterrey, Mexico',
-      dates: '2005-01 - 2009-02',
-      bullets: [
-        'Assisted in server provisioning, software installations, and routine maintenance tasks.',
-        'Created initial automated monitoring scripts for internal tracking tools.',
-      ],
-    },
-  ]);
+  if (!name) name = lines[0] || "Uploaded Resume Candidate";
+  if (!title) title = "Professional Role";
 
-  const [selectedFontSize, setSelectedFontSize] = useState('12');
-  const [textAlign] = useState<'left' | 'center' | 'right' | 'justify'>('left');
-  const [highlightColor] = useState('transparent');
+  const dateRegex = /\b(?:19|20)\d{2}(?:\s*[-–—/]\s*(?:(?:19|20)\d{2}|Current|Present|Now))?\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(?:19|20)\d{2}\b/i;
 
-  const [activeTemplate, setActiveTemplate] = useState<number>(1);
-  const [accentColor, setAccentColor] = useState<string>('#0f766e');
+  let currentSection: "SUMMARY" | "EXPERIENCE" | "EDUCATION" | "OTHER" = "SUMMARY";
+  let summaryLines: string[] = [];
+  const experiences: { period: string; role: string; company: string; bullets: string[] }[] = [];
+  const education: { period: string; degree: string; institution: string }[] = [];
 
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
-  const [saveStatus, setSaveStatus] = useState<'Saved' | 'Saving...'>('Saved');
+  let currentJob: { period: string; role: string; company: string; bullets: string[] } | null = null;
+  let currentEdu: { period: string; degree: string; institution: string } | null = null;
 
-  // Granular AI Rewriter states
-  const [summaryStyle, setSummaryStyle] = useState<string>('Executive');
-  const [isRewritingSummary, setIsRewritingSummary] = useState(false);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-  const [roleStyles, setRoleStyles] = useState<{ [key: string]: string }>({});
-  const [rewritingRoleKey, setRewritingRoleKey] = useState<string | null>(null);
+    if (sectionHeaderRegex.test(line)) {
+      const upper = line.toUpperCase();
+      if (upper.includes("EDUCATION")) {
+        currentSection = "EDUCATION";
+      } else if (upper.includes("EXPERIENCE") || upper.includes("EMPLOYMENT") || upper.includes("HISTORY")) {
+        currentSection = "EXPERIENCE";
+      } else if (upper.includes("SUMMARY") || upper.includes("OBJECTIVE")) {
+        currentSection = "SUMMARY";
+      } else {
+        currentSection = "OTHER";
+      }
+      continue;
+    }
 
-  const [bulletStyles, setBulletStyles] = useState<{ [key: string]: string }>({});
-  const [rewritingBulletKey, setRewritingBulletKey] = useState<string | null>(null);
+    if (currentSection === "SUMMARY") {
+      if (line !== name && line !== title && line !== email && line !== phone && line !== website) {
+        summaryLines.push(line);
+      }
+    } else if (currentSection === "EXPERIENCE" || currentSection === "OTHER") {
+      const hasDate = dateRegex.test(line);
 
-  // Export State flag to toggle input fields to plain text during canvas rendering
-  const [isExporting, setIsExporting] = useState(false);
-  const [isExportingDocx, setIsExportingDocx] = useState(false);
+      if (
+        hasDate ||
+        (!line.startsWith("•") &&
+          !line.startsWith("-") &&
+          !line.startsWith("*") &&
+          line.length < 90 &&
+          i + 1 < lines.length &&
+          (lines[i + 1].startsWith("•") || lines[i + 1].startsWith("-") || lines[i + 1].startsWith("*")))
+      ) {
+        if (currentJob) {
+          experiences.push(currentJob);
+        }
 
-  const resumeRef = useRef<HTMLDivElement>(null);
-  const currentTemplateObj = TEMPLATE_LAYOUTS.find((t) => t.id === activeTemplate) || TEMPLATE_LAYOUTS[0];
+        let period = "Period";
+        let role = line;
+        let company = "";
 
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        if (data.fullName) setFullName(data.fullName);
-        if (data.targetRole) setTargetRole(data.targetRole);
-        if (data.contactInfo) setContactInfo(data.contactInfo);
-        if (data.summary) setSummary(data.summary);
-        if (data.experiences && data.experiences.length > 0) setExperiences(data.experiences);
-        if (data.activeTemplate) setActiveTemplate(data.activeTemplate);
-        if (data.accentColor) setAccentColor(data.accentColor);
-      } catch (e) {
-        console.error(e);
+        const dateMatch = line.match(dateRegex);
+        if (dateMatch) {
+          period = dateMatch[0];
+          const textWithoutDate = line
+            .replace(dateMatch[0], "")
+            .replace(/^[|\-–—,\s]+|[|\-–—,\s]+$/g, "")
+            .trim();
+          if (textWithoutDate) {
+            const parts = textWithoutDate.split(/[|–—–-]/).map((p) => p.trim());
+            role = parts[0] || line;
+            company = parts.slice(1).join(" - ");
+          }
+        }
+
+        currentJob = {
+          period,
+          role: role || "Role",
+          company: company || "Company",
+          bullets: [],
+        };
+      } else {
+        const bulletText = line.replace(/^[-•*]\s*/, "");
+        if (currentJob) {
+          currentJob.bullets.push(bulletText);
+        } else {
+          currentJob = {
+            period: "Experience",
+            role: title,
+            company: fileName,
+            bullets: [bulletText],
+          };
+        }
+      }
+    } else if (currentSection === "EDUCATION") {
+      const dateMatch = line.match(dateRegex);
+      if (dateMatch || !currentEdu) {
+        if (currentEdu) education.push(currentEdu);
+        currentEdu = {
+          period: dateMatch ? dateMatch[0] : "Education",
+          degree: line
+            .replace(dateMatch ? dateMatch[0] : "", "")
+            .replace(/^[|\-–—,\s]+|[|\-–—,\s]+$/g, "")
+            .trim() || line,
+          institution: "Institution",
+        };
+      } else {
+        currentEdu.institution =
+          currentEdu.institution === "Institution" ? line : `${currentEdu.institution} - ${line}`;
       }
     }
+  }
+
+  if (currentJob) experiences.push(currentJob);
+  if (currentEdu) education.push(currentEdu);
+
+  if (experiences.length === 0) {
+    experiences.push({
+      period: "Full Document Content",
+      role: title,
+      company: fileName,
+      bullets: lines.filter((l) => l !== name && l !== title && l !== email && l !== phone),
+    });
+  }
+
+  return {
+    name,
+    title,
+    contact: {
+      address: "Address",
+      phone: phone || "Phone",
+      email: email || "Email",
+      website: website || "https://linkedin.com",
+    },
+    summary: summaryLines.join("\n") || lines.slice(0, 3).join("\n"),
+    experience: experiences,
+    education: education.length > 0 ? education : [
+      {
+        period: "Education",
+        degree: "Qualifications / Degree",
+        institution: "Institution",
+      },
+    ],
+    originalContent: rawText,
+  };
+}
+
+export default function ResumeStudioPage() {
+  const [currentUser, setCurrentUser] = useState<UserSessionPayload | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"editor" | "admin">("editor");
+
+  const [resumeData, setResumeData] = useState<any>({
+    name: "Enrique Farias Rodriguez",
+    title: "Site Reliability Engineer",
+    contact: {
+      address: "64630, Monterrey Mexico",
+      phone: "528-118-213655",
+      email: "enriquefariasrdz@gmail.com",
+      website: "https://enriquefariasrdz.wixsite.com/softeng",
+    },
+    summary:
+      "18 Years of Experience on IT Industry: 7 SRE/DevOps, 6 Team Lead Production Support, 5 Team Lead Helpdesk. Experienced SRE with international retail, gaming, and enterprise background managing GCP, AWS, Azure, and Kubernetes.",
+    experience: [
+      {
+        period: "2021-12 - Current",
+        role: "Senior DevOps Engineer (SRE)",
+        company: "Grid Dynamics - American Eagle Outfitters, Monterrey, Mexico (Remote)",
+        bullets: [
+          "Troubleshoot applications on GCP and on premises, mainly focused on GKE, PubSub, CloudSQL.",
+          "Resolve slowness on the website, add to bag, throughput or bot attacks.",
+          "Provide Correction of Error documentation from the High Severity incidents.",
+          "Create and correct dashboards to determine the website reliability.",
+        ],
+      },
+      {
+        period: "2020-09 - 2021-12",
+        role: "DevOps Engineer",
+        company: "Softtek - Electronic Arts, Guadalajara, Mexico",
+        bullets: [
+          "Worked as Observability Engineer providing accurate and constant metrics to trigger alerts and incidents.",
+          "Managed and sealed SSL certificates with Helm/Kubernetes secrets.",
+          "Integrated new routes to monitor and transmit metrics with RabbitMQ and Graphite apps.",
+        ],
+      },
+      {
+        period: "2018-11 - 2020-03",
+        role: "DevOps Engineer",
+        company: "Softtek - Staples, Guadalajara, Mexico",
+        bullets: [
+          "Designed and implemented Zabbix Monitoring on Azure and on premises, saving 10 million USD per year.",
+          "Deployed components and applications using ARM templates automating on Azure DevOps pipelines.",
+        ],
+      },
+    ],
+    education: [
+      {
+        period: "1998-09 - 2002-01",
+        degree: "BBA: Business Administration of Tourism",
+        institution: "Instituto Regiomontano De Hoteleria AC - Monterrey",
+      },
+    ],
+    originalContent: "",
+  });
+
+  const [activeTemplate, setActiveTemplate] = useState<"original" | "ats" | "modern">("ats");
+  const [isEditing, setIsEditing] = useState(false);
+  const [savedDbResumes, setSavedDbResumes] = useState<any[]>([]);
+  const [versionNameInput, setVersionNameInput] = useState("");
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveNotification, setSaveNotification] = useState("");
+  const [savingLoading, setSavingLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadFileName, setUploadFileName] = useState("");
+
+  // Check auth session on load
+  useEffect(() => {
+    async function checkAuth() {
+      const res = await getAuthSession();
+      if (res.success && res.user) {
+        setCurrentUser(res.user);
+        fetchUserResumes();
+      }
+    }
+    checkAuth();
   }, []);
 
-  useEffect(() => {
-    setSaveStatus('Saving...');
-    const timer = setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ fullName, targetRole, contactInfo, summary, experiences, activeTemplate, accentColor }));
-      setSaveStatus('Saved');
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [fullName, targetRole, contactInfo, summary, experiences, activeTemplate, accentColor]);
+  const fetchUserResumes = async () => {
+    const res = await getResumes();
+    if (res.success && res.data) {
+      setSavedDbResumes(res.data);
+    }
+  };
 
-  const handleUpdateExperience = (id: string, field: keyof ExperienceItem, value: any) => {
-    setExperiences((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  const handleAuthSuccess = (user: UserSessionPayload) => {
+    setCurrentUser(user);
+    fetchUserResumes();
+    setSaveNotification(`Welcome back, ${user.name || user.email}!`);
+    setTimeout(() => setSaveNotification(""), 4000);
+  };
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    setCurrentUser(null);
+    setSavedDbResumes([]);
+    setActiveTab("editor");
+    setSaveNotification("Logged out successfully.");
+    setTimeout(() => setSaveNotification(""), 4000);
+  };
+
+  const handleFieldChange = (field: string, value: string) => {
+    setResumeData((prev: any) => ({ ...prev, [field]: value }));
+  };
+
+  const handleContactChange = (field: string, value: string) => {
+    setResumeData((prev: any) => ({
+      ...prev,
+      contact: { ...prev.contact, [field]: value },
+    }));
+  };
+
+  const handleExperienceChange = (index: number, field: string, value: string) => {
+    const updated = [...resumeData.experience];
+    updated[index] = { ...updated[index], [field]: value };
+    setResumeData((prev: any) => ({ ...prev, experience: updated }));
+  };
+
+  const handleBulletChange = (expIndex: number, bulletIndex: number, value: string) => {
+    const updated = [...resumeData.experience];
+    const newBullets = [...updated[expIndex].bullets];
+    newBullets[bulletIndex] = value;
+    updated[expIndex] = { ...updated[expIndex], bullets: newBullets };
+    setResumeData((prev: any) => ({ ...prev, experience: updated }));
+  };
+
+  const handleAddBullet = (expIndex: number) => {
+    const updated = [...resumeData.experience];
+    updated[expIndex].bullets.push("");
+    setResumeData((prev: any) => ({ ...prev, experience: updated }));
+  };
+
+  const handleRemoveBullet = (expIndex: number, bulletIndex: number) => {
+    const updated = [...resumeData.experience];
+    updated[expIndex].bullets = updated[expIndex].bullets.filter((_: any, i: number) => i !== bulletIndex);
+    setResumeData((prev: any) => ({ ...prev, experience: updated }));
   };
 
   const handleAddExperience = () => {
-    setExperiences((prev) => [
-      {
-        id: String(Date.now()),
-        role: 'New Role Title',
-        company: 'Company Name',
-        location: 'Monterrey, Mexico',
-        dates: '2024 - Present',
-        bullets: ['Describe your core engineering responsibilities.'],
-      },
+    const newJob = {
+      period: "YYYY-MM - Present",
+      role: "Job Title",
+      company: "Company Name, Location",
+      bullets: [""],
+    };
+    setResumeData((prev: any) => ({
       ...prev,
-    ]);
+      experience: [newJob, ...prev.experience],
+    }));
   };
 
-  const handleRemoveExperience = (id: string) => {
-    setExperiences((prev) => prev.filter((item) => item.id !== id));
+  const handleRemoveExperience = (index: number) => {
+    const updated = resumeData.experience.filter((_: any, i: number) => i !== index);
+    setResumeData((prev: any) => ({ ...prev, experience: updated }));
   };
 
-  const handleRewriteSummary = () => {
-    setIsRewritingSummary(true);
-    setTimeout(() => {
-      setSummary(`Senior SRE & Cloud Architect leading resilient infrastructure deployments across GCP and Kubernetes, driving high-severity incident mitigation and enterprise reliability.`);
-      setIsRewritingSummary(false);
-    }, 400);
-  };
+  const handleSaveVersion = async () => {
+    if (!currentUser) {
+      setShowSaveModal(false);
+      setShowAuthModal(true);
+      return;
+    }
 
-  const handleRewriteEntirePosition = (id: string) => {
-    setRewritingRoleKey(id);
-    setTimeout(() => {
-      setExperiences((prev) =>
-        prev.map((exp) => {
-          if (exp.id === id) {
-            return {
-              ...exp,
-              bullets: exp.bullets.map((b) => `Optimized engineering delivery for enterprise workloads: ${b}`),
-            };
-          }
-          return exp;
-        })
-      );
-      setRewritingRoleKey(null);
-    }, 400);
-  };
+    setSavingLoading(true);
+    const versionName = versionNameInput.trim() || `v${savedDbResumes.length + 1}`;
+    const title = `${resumeData.title || "Resume"} (${versionName})`;
 
-  const handleRewriteSingleBullet = (expId: string, bIndex: number) => {
-    const key = `${expId}-${bIndex}`;
-    setRewritingBulletKey(key);
-    setTimeout(() => {
-      setExperiences((prev) =>
-        prev.map((exp) => {
-          if (exp.id === expId) {
-            const newBullets = [...exp.bullets];
-            newBullets[bIndex] = `${newBullets[bIndex]}`;
-            return { ...exp, bullets: newBullets };
-          }
-          return exp;
-        })
-      );
-      setRewritingBulletKey(null);
-    }, 300);
-  };
+    const contentStr = JSON.stringify(resumeData);
+    const res = await saveResumeVersion(null, title, versionName, contentStr);
 
-  const handleExportPDF = async () => {
-    const element = resumeRef.current;
-    if (!element) return;
-
-    setIsExporting(true);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('resume-preview-container');
-          if (clonedElement) {
-            clonedElement.style.colorScheme = 'light';
-            clonedElement.style.backgroundColor = '#ffffff';
-            clonedElement.style.color = '#0f172a';
-          }
-          
-          const style = clonedDoc.createElement('style');
-          style.innerHTML = `
-            * {
-              color-scheme: light !important;
-            }
-          `;
-          clonedDoc.head.appendChild(style);
-
-          const ignoredElements = clonedDoc.querySelectorAll('[data-html2canvas-ignore]');
-          ignoredElements.forEach((el) => el.remove());
-        },
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${fullName.replace(/\s+/g, '_')}_Resume.pdf`);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-    } finally {
-      setIsExporting(false);
+    setSavingLoading(false);
+    if (res.success) {
+      setVersionNameInput("");
+      setShowSaveModal(false);
+      fetchUserResumes();
+      setSaveNotification(`Successfully saved "${title}"!`);
+      setTimeout(() => setSaveNotification(""), 4000);
+    } else {
+      alert(res.error || "Failed to save resume version");
     }
   };
 
-  const handleExportDocx = () => {
-    setIsExportingDocx(true);
-    setTimeout(() => {
-      const htmlContent = `
-        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-        <head><title>${fullName} Resume</title><meta charset='utf-8'></head>
-        <body style="font-family: Calibri, sans-serif;">
-          <h1>${fullName}</h1>
-          <h3>${targetRole}</h3>
-          <p><strong>Contact:</strong> ${contactInfo}</p>
-          <hr/>
-          <h2>Professional Summary</h2>
-          <p>${summary}</p>
-          <h2>Work History</h2>
-          ${experiences
-            .map(
-              (e) => `
-              <div>
-                <h3>${e.role} — <em>${e.company}</em> (${e.dates})</h3>
-                <ul>
-                  ${e.bullets.map((b) => `<li>${b}</li>`).join('')}
-                </ul>
-              </div>
-            `
-            )
-            .join('')}
-        </body>
-        </html>
-      `;
-      const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${fullName.replace(/\s+/g, '_')}_Resume.doc`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setIsExportingDocx(false);
-    }, 600);
+  const handleLoadVersion = (rawContent: string) => {
+    try {
+      const parsed = JSON.parse(rawContent);
+      if (parsed.name || parsed.experience || parsed.originalContent) {
+        setResumeData(parsed);
+        if (parsed.originalContent) {
+          setActiveTemplate("original");
+        }
+        setSaveNotification("Loaded saved resume version!");
+        setTimeout(() => setSaveNotification(""), 4000);
+      }
+    } catch (e) {
+      console.error("Error parsing resume JSON:", e);
+    }
   };
 
-  const renderDynamicTemplate = () => {
-    const fontClass = currentTemplateObj.font;
-    const isCentered = activeTemplate === 3 || activeTemplate === 8;
-    const isSplit = activeTemplate === 2 || activeTemplate === 6;
-    const isTerminal = activeTemplate === 4 || activeTemplate === 10;
-    const isBrutalist = activeTemplate === 5;
+  const handleDeleteVersion = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm("Are you sure you want to delete this resume version?")) {
+      const res = await deleteResumeVersion(id);
+      if (res.success) {
+        fetchUserResumes();
+        setSaveNotification("Deleted resume version.");
+        setTimeout(() => setSaveNotification(""), 4000);
+      }
+    }
+  };
+
+  const handleParseUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validExts = [".pdf", ".docx"];
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!validExts.includes(ext)) {
+      alert("Unsupported file format! Please upload a PDF (.pdf) or Word document (.docx).");
+      return;
+    }
+
+    setUploading(true);
+    setUploadFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/parse", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.text) {
+        throw new Error(data.error || "Failed to parse file content.");
+      }
+
+      // Parse full raw text preserving original layout
+      const parsedFullResume = parseRawTextToResumeFull(data.text, file.name);
+      setResumeData(parsedFullResume);
+
+      // Automatically switch layout view to Original Layout
+      setActiveTemplate("original");
+
+      setSaveNotification(`Successfully parsed original layout from "${file.name}"!`);
+      setTimeout(() => setSaveNotification(""), 4000);
+    } catch (err: any) {
+      alert(err.message || "Failed to upload and parse file.");
+    } finally {
+      setUploading(false);
+      setUploadFileName("");
+      e.target.value = "";
+    }
+  };
+
+  const splitOriginalContentIntoSections = (text: string) => {
+    const rawLines = text.split(/\r?\n/);
+
+    const sections: { header: string; lines: string[] }[] = [];
+    let currentSection = { header: "Top Content", lines: [] as string[] };
+
+    rawLines.forEach((rawLine) => {
+      const trimmed = rawLine.trim();
+      const isHeader = sectionHeaderRegex.test(trimmed);
+
+      if (isHeader) {
+        if (currentSection.lines.length > 0 || currentSection.header !== "Top Content") {
+          sections.push(currentSection);
+        }
+        currentSection = { header: trimmed, lines: [] };
+      } else {
+        currentSection.lines.push(rawLine);
+      }
+    });
+
+    sections.push(currentSection);
+    return sections.filter((section, idx) => section.lines.length > 0 || idx === 0);
+  };
+
+  const rebuildOriginalContentFromSections = (sections: { header: string; lines: string[] }[]) => {
+    return sections
+      .map((section) => {
+        if (section.header === "Top Content") {
+          return section.lines.join("\n");
+        }
+        return [section.header, ...section.lines].join("\n");
+      })
+      .join("\n\n");
+  };
+
+  const handleOriginalSectionChange = (index: number, updatedText: string) => {
+    const sections = splitOriginalContentIntoSections(resumeData.originalContent || "");
+    const updatedLines = updatedText.split(/\r?\n/);
+    sections[index] = { ...sections[index], lines: updatedLines };
+    setResumeData((prev: any) => ({ ...prev, originalContent: rebuildOriginalContentFromSections(sections) }));
+  };
+
+  // Helper to render high-fidelity original layout line by line
+  const renderOriginalLayoutLines = (text: string) => {
+    if (!text) return null;
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+    const dateRegex = /\b(?:19|20)\d{2}(?:\s*[-–—/]\s*(?:(?:19|20)\d{2}|Current|Present|Now))?\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(?:19|20)\d{2}\b/i;
 
     return (
-      <div className={`space-y-6 ${fontClass}`} style={{ textAlign: isCentered ? 'center' : textAlign, color: '#0f172a' }}>
-        {/* Header Section */}
-        {isSplit ? (
-          <div className="border-b-2 pb-5 flex justify-between items-start" style={{ borderColor: accentColor }}>
-            <div>
-              {isExporting ? (
-                <div className="text-3xl font-black tracking-tight" style={{ color: accentColor }}>{fullName}</div>
-              ) : (
-                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
-              )}
-              {isExporting ? (
-                <div className="text-sm font-bold text-slate-700 mt-1">{targetRole}</div>
-              ) : (
-                <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
-              )}
-            </div>
-            <div className="text-right">
-              {isExporting ? (
-                <div className="text-[11px] text-slate-600 font-mono">{contactInfo}</div>
-              ) : (
-                <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-64 resize-none" />
-              )}
-            </div>
-          </div>
-        ) : isCentered ? (
-          <div className="border-b-2 pb-5 text-center" style={{ borderColor: accentColor }}>
-            {isExporting ? (
-              <div className="text-3xl font-black tracking-tight text-center" style={{ color: accentColor }}>{fullName}</div>
-            ) : (
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full" style={{ color: accentColor }} />
-            )}
-            {isExporting ? (
-              <div className="text-sm font-bold text-slate-700 text-center mt-1">{targetRole}</div>
-            ) : (
-              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none text-center w-full mt-1" />
-            )}
-            {isExporting ? (
-              <div className="text-[11px] text-slate-600 font-mono text-center mt-2">{contactInfo}</div>
-            ) : (
-              <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full mt-2 text-center resize-none" />
-            )}
-          </div>
-        ) : isTerminal ? (
-          <div className="bg-[#0f172a] text-[#34d399] p-6 rounded-xl border-2 border-[#10b981] font-mono space-y-2 shadow-lg">
-            <div className="text-xs text-[#94a3b8]">$ whoami --target-role</div>
-            {isExporting ? (
-              <div className="text-2xl font-black text-[#6ee7b7]">{fullName}</div>
-            ) : (
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-2xl font-black bg-transparent border-b border-dashed border-[#059669] text-[#6ee7b7] outline-none w-full" />
-            )}
-            {isExporting ? (
-              <div className="text-xs text-[#38bdf8]">{targetRole}</div>
-            ) : (
-              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-xs text-[#38bdf8] bg-transparent border border-dashed border-[#334155] p-1 w-full" />
-            )}
-            {isExporting ? (
-              <div className="text-[10px] text-[#cbd5e1]">{contactInfo}</div>
-            ) : (
-              <textarea rows={1} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[10px] text-[#cbd5e1] bg-transparent border border-dashed border-[#334155] p-1 w-full" />
-            )}
-          </div>
-        ) : isBrutalist ? (
-          <div className="border-4 border-[#000000] p-5 bg-[#fefce8] space-y-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            {isExporting ? (
-              <div className="text-3xl font-black uppercase tracking-wider text-[#000000]">{fullName}</div>
-            ) : (
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black uppercase tracking-wider bg-transparent border-b-2 border-[#000000] outline-none w-full text-[#000000]" />
-            )}
-            {isExporting ? (
-              <div className="text-sm font-extrabold uppercase text-[#000000]">{targetRole}</div>
-            ) : (
-              <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-extrabold uppercase text-[#000000] bg-transparent w-full" />
-            )}
-            {isExporting ? (
-              <div className="text-xs font-mono text-[#000000]">{contactInfo}</div>
-            ) : (
-              <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-xs font-mono bg-[#ffffff] border-2 border-[#000000] p-1 w-full text-[#000000]" />
-            )}
-          </div>
-        ) : (
-          <div className="border-b-2 pb-5 flex justify-between items-end" style={{ borderColor: accentColor }}>
-            <div>
-              <div className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase mb-1 text-[#ffffff]" style={{ backgroundColor: accentColor }}>
-                {currentTemplateObj.name}
-              </div>
-              {isExporting ? (
-                <div className="text-3xl font-black tracking-tight" style={{ color: accentColor }}>{fullName}</div>
-              ) : (
-                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="text-3xl font-black tracking-tight bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full" style={{ color: accentColor }} />
-              )}
-              {isExporting ? (
-                <div className="text-sm font-bold text-slate-700 mt-1">{targetRole}</div>
-              ) : (
-                <input type="text" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} className="text-sm font-bold text-slate-700 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-600 outline-none w-full mt-1" />
-              )}
-            </div>
-            <div className="text-right max-w-[300px]">
-              {isExporting ? (
-                <div className="text-[11px] text-slate-600 font-mono">{contactInfo}</div>
-              ) : (
-                <textarea rows={2} value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} className="text-[11px] text-slate-600 font-mono bg-transparent border border-dashed border-slate-300 p-1 rounded w-full resize-none" />
-              )}
-            </div>
-          </div>
-        )}
+      <div className="space-y-2 font-sans">
+        {lines.map((line, idx) => {
+          const isSectionHeader = sectionHeaderRegex.test(line);
+          const hasDate = dateRegex.test(line);
+          const isBullet = line.startsWith("•") || line.startsWith("-") || line.startsWith("*");
 
-        {/* Professional Summary Section */}
-        <div className={`space-y-3 ${isExporting ? 'bg-transparent p-0 border-none' : 'bg-slate-50 p-4 rounded-xl border border-slate-200'} shadow-xs`}>
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 border-l-4 pl-2" style={{ borderColor: accentColor }}>
-              Professional Summary
-            </h3>
-            <span data-html2canvas-ignore className="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-              ✨ Section AI Writer
-            </span>
-          </div>
-
-          {isExporting ? (
-            <p className="text-slate-800 leading-relaxed" style={{ fontSize: `${selectedFontSize}px` }}>{summary}</p>
-          ) : (
-            <textarea
-              rows={3}
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              className="w-full text-slate-800 bg-white border border-dashed border-slate-300 focus:border-blue-600 outline-none p-2 rounded leading-relaxed resize-y shadow-xs"
-              style={{ fontSize: `${selectedFontSize}px`, backgroundColor: highlightColor === 'transparent' ? '#ffffff' : highlightColor }}
-            />
-          )}
-
-          {/* AI Controls Box - Hidden during export */}
-          <div data-html2canvas-ignore className="bg-white p-3 rounded-lg border border-blue-200 shadow-xs space-y-2">
-            <label className="text-[11px] font-bold text-blue-900 uppercase tracking-wide block">
-              ✨ Rewrite Summary Section Tone
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {WRITING_STYLES.map((style) => (
-                <button
-                  key={style.name}
-                  onClick={() => setSummaryStyle(style.name)}
-                  className={`text-left p-2 rounded-lg border text-xs transition ${summaryStyle === style.name ? 'border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-xs' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="font-semibold">{style.name}</div>
-                  <div className="text-[9px] text-slate-500 truncate">{style.desc}</div>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={handleRewriteSummary}
-              disabled={isRewritingSummary}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg shadow transition mt-1"
-            >
-              {isRewritingSummary ? 'Rewriting Summary...' : `Rewrite Summary in "${summaryStyle}" Style`}
-            </button>
-          </div>
-        </div>
-
-        {/* Work History Section */}
-        <div className="space-y-4 pt-2">
-          <div className="flex items-center justify-between border-b pb-1.5" style={{ borderColor: accentColor }}>
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-              Work History
-            </h3>
-            <button
-              data-html2canvas-ignore
-              onClick={handleAddExperience}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] rounded-lg shadow transition"
-            >
-              + Add Position
-            </button>
-          </div>
-
-          {experiences.map((exp, expIdx) => {
-            const currentRoleStyle = roleStyles[exp.id] || 'Executive';
+          if (idx === 0) {
+            // Document Title / Full Name Line
             return (
-              <div key={exp.id || expIdx} className={`space-y-3 mb-5 ${isExporting ? 'bg-transparent p-0 border-none shadow-none' : 'p-4 rounded-xl bg-white border border-slate-200 shadow-xs'}`}>
-                <div className="flex justify-between items-center gap-2">
-                  <div className="flex-1 grid grid-cols-2 gap-2">
-                    {isExporting ? (
-                      <div className="text-xs font-extrabold text-slate-900">{exp.role}</div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={exp.role}
-                        onChange={(e) => handleUpdateExperience(exp.id, 'role', e.target.value)}
-                        className="text-xs font-extrabold text-slate-900 bg-transparent border border-dashed border-slate-300 p-1 rounded"
-                      />
-                    )}
-                    {isExporting ? (
-                      <div className="text-xs font-semibold text-slate-700">{exp.company}</div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={exp.company}
-                        onChange={(e) => handleUpdateExperience(exp.id, 'company', e.target.value)}
-                        className="text-xs font-semibold text-slate-700 bg-transparent border border-dashed border-slate-300 p-1 rounded"
-                      />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isExporting ? (
-                      <div className="text-[11px] font-mono font-semibold px-2 py-0.5 text-slate-800">{exp.dates}</div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={exp.dates}
-                        onChange={(e) => handleUpdateExperience(exp.id, 'dates', e.target.value)}
-                        className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 w-36 text-center"
-                      />
-                    )}
-                    <button
-                      data-html2canvas-ignore
-                      onClick={() => handleRemoveExperience(exp.id)}
-                      className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded bg-red-50"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
+              <h1 key={idx} className="text-3xl font-extrabold text-slate-900 border-b-2 border-slate-900 pb-2 mb-3">
+                {line}
+              </h1>
+            );
+          }
 
-                {/* Role AI Rewriter Tool - Hidden from export */}
-                <div data-html2canvas-ignore className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-700 text-[11px]">✨ Rewrite Whole Role:</span>
-                    <select
-                      value={currentRoleStyle}
-                      onChange={(e) => setRoleStyles({ ...roleStyles, [exp.id]: e.target.value })}
-                      className="border border-slate-300 rounded px-2 py-1 text-[11px] bg-white font-medium text-slate-800"
-                    >
-                      {WRITING_STYLES.map((st) => (
-                        <option key={st.name} value={st.name}>{st.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    onClick={() => handleRewriteEntirePosition(exp.id)}
-                    disabled={rewritingRoleKey === exp.id}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded shadow-xs transition text-[11px]"
-                  >
-                    {rewritingRoleKey === exp.id ? 'Rewriting Experience...' : `Rewrite Experience Position`}
-                  </button>
-                </div>
+          if (idx === 1 && line.length < 70 && !line.includes("@")) {
+            // Candidate Role / Subtitle
+            return (
+              <h2 key={idx} className="text-lg font-semibold text-slate-700 mb-2">
+                {line}
+              </h2>
+            );
+          }
 
-                <div className="space-y-2 pt-1">
-                  {exp.bullets.map((bullet, bIdx) => {
-                    const bulletKey = `${exp.id}-${bIdx}`;
-                    const currentBulletStyle = bulletStyles[bulletKey] || 'Direct';
-                    return (
-                      <div key={bIdx} className={`${isExporting ? 'bg-transparent p-0 border-none' : 'p-2.5 rounded-lg bg-slate-50 border border-slate-200'} space-y-2`}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 text-xs font-bold">•</span>
-                          {isExporting ? (
-                            <div className="flex-1 text-slate-800" style={{ fontSize: `${selectedFontSize}px` }}>{bullet}</div>
-                          ) : (
-                            <input
-                              type="text"
-                              value={bullet}
-                              onChange={(e) => {
-                                const newBullets = [...exp.bullets];
-                                newBullets[bIdx] = e.target.value;
-                                handleUpdateExperience(exp.id, 'bullets', newBullets);
-                              }}
-                              className="flex-1 text-slate-800 bg-white border border-dashed border-slate-300 p-1.5 rounded shadow-xs"
-                              style={{ fontSize: `${selectedFontSize}px` }}
-                            />
-                          )}
-                        </div>
+          if (isSectionHeader) {
+            // Section Heading
+            return (
+              <h3 key={idx} className="text-sm font-bold uppercase tracking-wider text-slate-900 border-b-2 border-slate-300 pb-1 mt-6 mb-2">
+                {line}
+              </h3>
+            );
+          }
 
-                        {/* Bullet Statement AI Toolbar - Hidden from export */}
-                        <div data-html2canvas-ignore className="flex items-center justify-between pl-4 text-[10px]">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-500 font-medium">✨ Rewrite Statement:</span>
-                            <select
-                              value={currentBulletStyle}
-                              onChange={(e) => setBulletStyles({ ...bulletStyles, [bulletKey]: e.target.value })}
-                              className="border border-slate-300 rounded px-1.5 py-0.5 bg-white text-slate-800 font-medium"
-                            >
-                              {WRITING_STYLES.map((st) => (
-                                <option key={st.name} value={st.name}>{st.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <button
-                            onClick={() => handleRewriteSingleBullet(exp.id, bIdx)}
-                            disabled={rewritingBulletKey === bulletKey}
-                            className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow-xs transition"
-                          >
-                            {rewritingBulletKey === bulletKey ? 'Rewriting...' : 'Rewrite Statement'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+          if (hasDate) {
+            // Date / Role Line
+            const dateMatch = line.match(dateRegex);
+            const dateText = dateMatch ? dateMatch[0] : "";
+            const titleText = line.replace(dateText, "").replace(/^[|\-–—,\s]+|[|\-–—,\s]+$/g, "").trim();
+
+            return (
+              <div key={idx} className="flex justify-between items-baseline font-bold text-xs sm:text-sm text-slate-900 mt-3">
+                <span>{titleText || line}</span>
+                {dateText && <span className="font-mono text-xs text-slate-600 ml-4">{dateText}</span>}
               </div>
             );
-          })}
-        </div>
+          }
+
+          if (isBullet) {
+            const cleanBullet = line.replace(/^[-•*]\s*/, "");
+            return (
+              <div key={idx} className="flex items-start space-x-2 pl-4 py-0.5 text-xs sm:text-sm text-slate-800 leading-relaxed">
+                <span className="text-indigo-600 font-bold select-none">•</span>
+                <span>{cleanBullet}</span>
+              </div>
+            );
+          }
+
+          return (
+            <p key={idx} className="text-xs sm:text-sm text-slate-800 leading-relaxed">
+              {line}
+            </p>
+          );
+        })}
       </div>
     );
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 text-slate-800 font-sans overflow-hidden">
-      <header className="bg-[#0a192f] text-[#ffffff] px-6 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-1 font-black text-xl tracking-tight">
-            <span className="text-blue-500">resume</span>studio
-          </div>
-          <nav className="flex items-center gap-6 text-xs font-bold tracking-wider">
-            {(['DASHBOARD', 'RESUMES', 'COVER LETTER'] as NavTab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setCurrentNav(tab)}
-                className={`pb-1 border-b-2 transition ${currentNav === tab ? 'border-blue-500 text-[#ffffff]' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
-              >
-                {tab}
-              </button>
-            ))}
-          </nav>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative">
+      {/* Toast Notification Banner */}
+      {saveNotification && (
+        <div className="fixed top-20 right-6 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold border border-indigo-500 transition animate-bounce flex items-center space-x-2">
+          <Check className="w-4 h-4" />
+          <span>{saveNotification}</span>
         </div>
-        <span className="text-xs bg-slate-800 text-emerald-400 border border-slate-700 px-2.5 py-1 rounded font-mono">
-          ✓ {saveStatus}
-        </span>
-      </header>
+      )}
 
-      {currentNav === 'RESUMES' && (
-        <div className="bg-white border-b border-slate-300 px-4 py-2 flex items-center gap-4 text-xs shrink-0 shadow-xs overflow-x-auto">
-          <div className="flex items-center gap-2 border-r pr-4 border-slate-200">
-            <div className="flex flex-col">
-              <select disabled className="border border-slate-200 rounded px-2 py-1 text-xs bg-slate-100 text-slate-400 font-medium">
-                <option>{currentTemplateObj.font === 'font-serif' ? 'Serif (Template Default)' : currentTemplateObj.font === 'font-mono' ? 'Monospace (Template Default)' : 'Sans-Serif (Template Default)'}</option>
-              </select>
-              <span className="text-[9px] text-amber-600 font-bold mt-0.5">🔒 Driven by Selected Template</span>
-            </div>
-            <div className="flex flex-col">
-              <select
-                value={selectedFontSize}
-                onChange={(e) => setSelectedFontSize(e.target.value)}
-                className="border border-blue-400 ring-1 ring-blue-400 rounded px-2 py-1 text-xs bg-blue-50 font-bold text-blue-900 w-24"
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
+
+      {/* Save Version Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-white">
+              Save Current Resume Version
+            </h3>
+            <p className="text-xs text-slate-400">
+              Give this version a custom name/label so you can reference or reload it later.
+            </p>
+            <input
+              type="text"
+              placeholder="e.g., SRE Target Role v2"
+              value={versionNameInput}
+              onChange={(e) => setVersionNameInput(e.target.value)}
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            />
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
               >
-                <option value="10">10 pt</option>
-                <option value="12">12 pt (Default)</option>
-                <option value="14">14 pt</option>
-                <option value="16">16 pt</option>
-              </select>
-              <span className="text-[9px] text-blue-600 font-bold mt-0.5">✏️ Controls Body Text Size</span>
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveVersion}
+                disabled={savingLoading}
+                className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow flex items-center space-x-1"
+              >
+                {savingLoading && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
+                <span>Confirm & Save</span>
+              </button>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              onClick={handleExportPDF}
-              disabled={isExporting}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-[#ffffff] font-bold rounded-lg shadow transition flex items-center gap-1.5"
-            >
-              <span>📥</span> {isExporting ? 'Exporting PDF...' : 'Export PDF'}
-            </button>
-            <button
-              onClick={handleExportDocx}
-              disabled={isExportingDocx}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-[#ffffff] font-bold rounded-lg shadow transition flex items-center gap-1.5"
-            >
-              <span>📄</span> {isExportingDocx ? 'Exporting Word...' : 'Export Word'}
-            </button>
           </div>
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden">
-        {currentNav === 'RESUMES' && (
-          <aside className={`${isDrawerOpen ? 'w-96' : 'w-16'} bg-slate-900 border-r border-slate-800 text-[#ffffff] flex flex-col transition-all duration-300 shrink-0`}>
-            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-              {isDrawerOpen && <span className="text-xs font-bold tracking-wider uppercase text-slate-400">Template Customizer</span>}
+      {/* Top Navbar */}
+      <header className="border-b border-slate-800/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
+              R
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-white">Resume Studio</h1>
+          </div>
+          <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2.5 py-0.5 rounded-full border border-indigo-500/30 font-semibold">
+            Pro Multi-User
+          </span>
+
+          {/* Navigation Views */}
+          <div className="ml-4 flex bg-slate-950 p-1 rounded-xl border border-slate-800 space-x-1">
+            <button
+              onClick={() => setActiveTab("editor")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+                activeTab === "editor"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Resume Editor
+            </button>
+            {currentUser?.role === "ADMIN" && (
               <button
-                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-                className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs"
+                onClick={() => setActiveTab("admin")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center space-x-1.5 ${
+                  activeTab === "admin"
+                    ? "bg-amber-600 text-white shadow-sm"
+                    : "text-amber-400 hover:text-amber-300"
+                }`}
               >
-                {isDrawerOpen ? '◀' : '▶'}
+                <Shield className="w-3.5 h-3.5" />
+                <span>Admin Portal</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* User Auth & Top Action Controls */}
+        <div className="flex items-center space-x-3">
+          {activeTab === "editor" && (
+            <>
+              {/* Top Upload Resume Button */}
+              <div>
+                <input
+                  type="file"
+                  id="top-resume-upload"
+                  accept=".pdf,.docx"
+                  className="hidden"
+                  onChange={handleParseUpload}
+                  disabled={uploading}
+                />
+                <label
+                  htmlFor="top-resume-upload"
+                  className={`cursor-pointer flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition ${
+                    uploading
+                      ? "bg-slate-800 text-slate-400 border-slate-700"
+                      : "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/30 shadow-sm"
+                  }`}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                      <span>Parsing Layout...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="w-3.5 h-3.5" />
+                      <span>Upload PDF / DOCX</span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              {/* Layout Templates Selection */}
+              <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex space-x-1">
+                <button
+                  onClick={() => setActiveTemplate("original")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center space-x-1 ${
+                    activeTemplate === "original"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <LayoutTemplate className="w-3 h-3" />
+                  <span>Original Layout</span>
+                </button>
+                <button
+                  onClick={() => setActiveTemplate("ats")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
+                    activeTemplate === "ats" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  ATS Minimalist
+                </button>
+                <button
+                  onClick={() => setActiveTemplate("modern")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
+                    activeTemplate === "modern" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Modern Executive
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                className={`px-4 py-1.5 text-xs font-semibold rounded-xl transition ${
+                  isEditing
+                    ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                    : "bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700"
+                }`}
+              >
+                {isEditing ? "Preview Mode" : "Edit Resume"}
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                  } else {
+                    setShowSaveModal(true);
+                  }
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 text-xs font-semibold rounded-xl shadow transition"
+              >
+                Save Version
+              </button>
+            </>
+          )}
+
+          <div className="h-6 w-[1px] bg-slate-800 hidden sm:block" />
+
+          {/* User Account Controls */}
+          {currentUser ? (
+            <div className="flex items-center space-x-3 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center font-bold text-xs">
+                  {currentUser.email[0].toUpperCase()}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-semibold text-white leading-tight truncate max-w-[120px]">
+                    {currentUser.name || currentUser.email.split("@")[0]}
+                  </p>
+                  <p className="text-[10px] text-indigo-400 font-mono leading-none">
+                    {currentUser.role}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleSignOut}
+                title="Log Out"
+                className="text-slate-400 hover:text-red-400 p-1 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
-
-            {isDrawerOpen && (
-              <div className="flex-1 overflow-y-auto p-4 space-y-6 text-xs">
-                <div className="space-y-3">
-                  <label className="font-extrabold uppercase tracking-wider text-slate-400 block">
-                    Template Styles (10 Layouts)
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {TEMPLATE_LAYOUTS.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setActiveTemplate(t.id)}
-                        className={`p-2.5 rounded-lg border text-left transition ${activeTemplate === t.id ? 'border-blue-500 bg-blue-950/60 text-[#ffffff] font-bold ring-1 ring-blue-500' : 'border-slate-800 bg-slate-800/50 text-slate-300 hover:bg-slate-800'}`}
-                      >
-                        <div className="text-[11px] font-semibold">{t.name}</div>
-                        <div className="text-[9px] text-slate-400 mt-0.5 truncate">{t.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3 border-t border-slate-800 pt-4">
-                  <label className="font-extrabold uppercase tracking-wider text-slate-400 block">
-                    Accent Color Palette (20 Options)
-                  </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {COLOR_PALETTES.map((cp) => (
-                      <button
-                        key={cp.name}
-                        onClick={() => setAccentColor(cp.hex)}
-                        title={cp.name}
-                        className={`h-8 rounded-lg border transition ${accentColor === cp.hex ? 'border-[#ffffff] scale-110 shadow-lg ring-2 ring-white/50' : 'border-transparent hover:scale-105'}`}
-                        style={{ backgroundColor: cp.hex }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </aside>
-        )}
-
-        <main className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-          {currentNav === 'RESUMES' && (
-            <div
-              ref={resumeRef}
-              id="resume-preview-container"
-              className="w-[850px] min-h-[1100px] bg-white text-slate-900 shadow-2xl p-12 rounded-xl border border-slate-300 relative transition-all"
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center space-x-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white px-4 py-1.5 text-xs font-semibold rounded-xl shadow-lg transition"
             >
-              {renderDynamicTemplate()}
-            </div>
+              <LogIn className="w-4 h-4" />
+              <span>Sign In / Register</span>
+            </button>
           )}
+        </div>
+      </header>
 
-          {currentNav === 'DASHBOARD' && (
-            <div className="w-full max-w-4xl space-y-6">
-              <div className="bg-white p-6 rounded-xl border border-slate-300 shadow-sm space-y-3">
-                <h2 className="text-lg font-black text-slate-900">Career Studio Dashboard</h2>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Welcome back! Manage your professional documents, target roles, and automated ATS tuning profiles from this central control hub.
-                </p>
+      {/* Main Content Area */}
+      {activeTab === "admin" && currentUser?.role === "ADMIN" ? (
+        <AdminDashboard />
+      ) : (
+        <div className="flex-1 grid grid-cols-12 gap-6 p-6 w-full items-start max-w-7xl mx-auto">
+          {/* Left Sidebar */}
+          <aside className="col-span-12 md:col-span-3 space-y-6">
+            {/* Upload PDF/DOCX Resume Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center space-x-2 text-indigo-400">
+                <Upload className="w-4 h-4" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Upload Original Layout
+                </h3>
               </div>
-            </div>
-          )}
+              <p className="text-xs text-slate-400">
+                Import PDF or Word (.docx) files to render and preserve the exact original layout and text flow.
+              </p>
 
-          {currentNav === 'COVER LETTER' && (
-            <div className="w-full max-w-4xl space-y-6">
-              <div className="bg-white p-6 rounded-xl border border-slate-300 shadow-sm space-y-4">
-                <h2 className="text-lg font-black text-slate-900">Cover Letter Studio</h2>
-                <p className="text-xs text-slate-600">
-                  Generate personalized, high-impact cover letters tailored to your SRE and DevOps experience.
-                </p>
-                <textarea
-                  rows={8}
-                  className="w-full border border-slate-300 rounded-lg p-3 text-xs text-slate-700 outline-none focus:border-blue-600"
-                  defaultValue={`Dear Hiring Manager,\n\nAs a Senior DevOps and SRE professional with extensive leadership in operating mission-critical services on GCP, Azure, and Kubernetes, I am thrilled to apply for the ${targetRole} position...\n\nSincerely,\n${fullName}`}
-                />
-              </div>
+              <input
+                type="file"
+                id="sidebar-resume-upload"
+                accept=".pdf,.docx"
+                className="hidden"
+                onChange={handleParseUpload}
+                disabled={uploading}
+              />
+              <label
+                htmlFor="sidebar-resume-upload"
+                className={`border-2 border-dashed rounded-xl p-5 text-center transition block cursor-pointer ${
+                  uploading
+                    ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-300"
+                    : "border-slate-800 hover:border-indigo-500/50 bg-slate-950/60 hover:bg-slate-950 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {uploading ? (
+                  <div className="flex flex-col items-center justify-center space-y-2 py-1">
+                    <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+                    <p className="text-xs font-medium text-indigo-300 truncate max-w-full">
+                      Parsing original layout of {uploadFileName}...
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center space-y-1.5">
+                    <FileUp className="w-6 h-6 text-indigo-400" />
+                    <p className="text-xs font-medium text-slate-200">
+                      Click to browse or drop file
+                    </p>
+                    <span className="text-[10px] text-slate-500">
+                      Preserves 100% Original Layout
+                    </span>
+                  </div>
+                )}
+              </label>
             </div>
-          )}
-        </main>
-      </div>
+
+            {/* User Status Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-center space-x-3 mb-2">
+                <UserIcon className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  {currentUser ? "My Workspace" : "Guest Mode"}
+                </h3>
+              </div>
+              {currentUser ? (
+                <p className="text-xs text-slate-400">
+                  Logged in as <strong className="text-slate-200">{currentUser.email}</strong>. Resumes saved here are private to your account.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">
+                    Sign in to save and sync your resume versions securely across sessions.
+                  </p>
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="w-full text-xs font-semibold py-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-xl border border-slate-700 transition"
+                  >
+                    Log In / Register
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Saved Resumes List */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1">
+                  <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>My Saved Versions ({savedDbResumes.length})</span>
+                </h3>
+              </div>
+
+              {!currentUser ? (
+                <p className="text-xs text-slate-500 italic">Please sign in to view your saved resume versions.</p>
+              ) : savedDbResumes.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No custom versions saved yet. Click &quot;Save Version&quot; above.</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {savedDbResumes.map((ver) => (
+                    <div
+                      key={ver.id}
+                      onClick={() => handleLoadVersion(ver.content)}
+                      className="p-3 bg-slate-950/80 hover:bg-slate-800/90 border border-slate-800 hover:border-indigo-500/40 rounded-xl cursor-pointer transition flex items-center justify-between group"
+                    >
+                      <div className="truncate mr-2">
+                        <p className="text-xs font-semibold text-white truncate">{ver.title}</p>
+                        <span className="text-[10px] text-slate-500 block">
+                          {new Date(ver.updatedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => handleDeleteVersion(e, ver.id)}
+                        title="Delete Version"
+                        className="text-slate-600 hover:text-red-400 p-1 rounded transition opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* Main Document Canvas */}
+          <main className="col-span-12 md:col-span-9 bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-3">
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-widest flex items-center space-x-2">
+                <span>Mode: {isEditing ? "Live Layout Editor" : "Live Layout Preview"}</span>
+                {activeTemplate === "original" && (
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">
+                    High-Fidelity Original Layout
+                  </span>
+                )}
+              </span>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-medium">
+                100% Layout & Content Preserved
+              </span>
+            </div>
+
+            <div className="flex-1 flex flex-col w-full">
+              {activeTemplate === "original" ? (
+                /* High-Fidelity Original Layout Template Canvas */
+                <div className="bg-white text-slate-900 p-8 sm:p-14 rounded-xl shadow-2xl max-w-4xl mx-auto w-full font-sans border border-slate-200 space-y-4">
+                  {isEditing ? (
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                          Live Document Content Editor (Preserves original text flow)
+                        </label>
+                        <p className="text-[11px] text-slate-500">
+                          Edit the resume in smaller sections to keep the format organized and avoid the full document becoming one large block.
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        {splitOriginalContentIntoSections(resumeData.originalContent || "").map((section, sectionIndex) => (
+                          <div
+                            key={section.header + sectionIndex}
+                            className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between mb-3 gap-3">
+                              <div>
+                                <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500 font-semibold">
+                                  {section.header === "Top Content" ? "General Section" : section.header}
+                                </p>
+                                {section.header !== "Top Content" && (
+                                  <p className="text-[10px] text-slate-400 mt-1">
+                                    Edits here update only this section of the resume.
+                                  </p>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 px-2 py-1 rounded-full bg-slate-100 border border-slate-200">
+                                {section.lines.length} line{section.lines.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                            <textarea
+                              rows={Math.min(Math.max(section.lines.length + 3, 8), 18)}
+                              value={section.lines.join("\n")}
+                              onChange={(e) => handleOriginalSectionChange(sectionIndex, e.target.value)}
+                              className="w-full text-xs font-mono p-4 border border-slate-300 rounded-2xl focus:outline-none focus:border-indigo-600 leading-relaxed bg-white text-slate-900 shadow-inner"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      {resumeData.originalContent ? (
+                        renderOriginalLayoutLines(resumeData.originalContent)
+                      ) : (
+                        <div className="space-y-4 font-sans text-slate-900">
+                          <h1 className="text-3xl font-extrabold border-b-2 border-slate-900 pb-2 mb-2">
+                            {resumeData.name}
+                          </h1>
+                          <p className="text-base font-semibold text-slate-700">{resumeData.title}</p>
+                          <p className="text-xs text-slate-600">
+                            {resumeData.contact.address} • {resumeData.contact.phone} • {resumeData.contact.email}
+                          </p>
+
+                          <div className="space-y-3 pt-3">
+                            <h3 className="text-sm font-bold uppercase tracking-wider border-b-2 border-slate-300 pb-1">
+                              Professional Summary
+                            </h3>
+                            <p className="text-xs leading-relaxed">{resumeData.summary}</p>
+
+                            <h3 className="text-sm font-bold uppercase tracking-wider border-b-2 border-slate-300 pb-1 pt-3">
+                              Work Experience
+                            </h3>
+                            {resumeData.experience?.map((exp: any, i: number) => (
+                              <div key={i} className="space-y-1">
+                                <div className="font-bold text-xs flex justify-between">
+                                  <span>{exp.role} - {exp.company}</span>
+                                  <span className="font-mono">{exp.period}</span>
+                                </div>
+                                <ul className="list-disc list-inside text-xs pl-2 space-y-1">
+                                  {exp.bullets?.map((b: string, bi: number) => (
+                                    <li key={bi}>{b}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : activeTemplate === "ats" ? (
+                /* ATS Minimalist Template */
+                <div className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-lg max-w-4xl mx-auto w-full font-serif space-y-6">
+                  {/* Name & Title */}
+                  <div className="border-b pb-4 text-center sm:text-left">
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={resumeData.name}
+                          onChange={(e) => handleFieldChange("name", e.target.value)}
+                          className="w-full text-2xl font-bold font-sans border-b border-slate-300 focus:outline-none focus:border-indigo-600 py-1"
+                        />
+                        <input
+                          type="text"
+                          value={resumeData.title}
+                          onChange={(e) => handleFieldChange("title", e.target.value)}
+                          className="w-full text-base text-slate-600 font-sans border-b border-slate-300 focus:outline-none focus:border-indigo-600 py-1"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h2 className="text-3xl font-bold font-sans text-slate-900">{resumeData.name}</h2>
+                        <p className="text-lg text-slate-700 font-sans font-medium">{resumeData.title}</p>
+                      </>
+                    )}
+
+                    {/* Contact Details */}
+                    <div className="text-xs font-sans text-slate-600 flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                      {isEditing ? (
+                        <div className="grid grid-cols-2 gap-2 w-full mt-2">
+                          <input
+                            type="text"
+                            value={resumeData.contact.address}
+                            onChange={(e) => handleContactChange("address", e.target.value)}
+                            placeholder="Address"
+                            className="text-xs p-1.5 border border-slate-300 rounded font-sans"
+                          />
+                          <input
+                            type="text"
+                            value={resumeData.contact.phone}
+                            onChange={(e) => handleContactChange("phone", e.target.value)}
+                            placeholder="Phone"
+                            className="text-xs p-1.5 border border-slate-300 rounded font-sans"
+                          />
+                          <input
+                            type="text"
+                            value={resumeData.contact.email}
+                            onChange={(e) => handleContactChange("email", e.target.value)}
+                            placeholder="Email"
+                            className="text-xs p-1.5 border border-slate-300 rounded font-sans"
+                          />
+                          <input
+                            type="text"
+                            value={resumeData.contact.website}
+                            onChange={(e) => handleContactChange("website", e.target.value)}
+                            placeholder="Website"
+                            className="text-xs p-1.5 border border-slate-300 rounded font-sans"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <span>{resumeData.contact.address}</span>
+                          <span>•</span>
+                          <span>{resumeData.contact.phone}</span>
+                          <span>•</span>
+                          <span>{resumeData.contact.email}</span>
+                          <span>•</span>
+                          <a href={resumeData.contact.website} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                            {resumeData.contact.website}
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wider font-sans border-b border-slate-300 pb-1 text-slate-900">
+                      Professional Summary
+                    </h3>
+                    {isEditing ? (
+                      <textarea
+                        rows={3}
+                        value={resumeData.summary}
+                        onChange={(e) => handleFieldChange("summary", e.target.value)}
+                        className="w-full text-xs font-sans p-2 border border-slate-300 rounded focus:outline-none focus:border-indigo-600"
+                      />
+                    ) : (
+                      <p className="text-xs leading-relaxed text-slate-800 font-sans whitespace-pre-line">{resumeData.summary}</p>
+                    )}
+                  </div>
+
+                  {/* Experience */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center border-b border-slate-300 pb-1">
+                      <h3 className="text-sm font-bold uppercase tracking-wider font-sans text-slate-900">
+                        Professional Experience
+                      </h3>
+                      {isEditing && (
+                        <button
+                          onClick={handleAddExperience}
+                          className="text-xs bg-indigo-600 text-white font-sans font-medium px-2.5 py-1 rounded hover:bg-indigo-500 flex items-center space-x-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Job</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {resumeData.experience.map((exp: any, expIdx: number) => (
+                      <div key={expIdx} className="space-y-2 relative group">
+                        {isEditing && (
+                          <button
+                            onClick={() => handleRemoveExperience(expIdx)}
+                            className="absolute right-0 top-0 text-red-500 hover:text-red-700 text-xs font-sans border border-red-200 px-2 py-0.5 rounded bg-red-50"
+                          >
+                            Remove Job
+                          </button>
+                        )}
+                        <div className="flex justify-between items-baseline font-sans">
+                          {isEditing ? (
+                            <div className="grid grid-cols-3 gap-2 w-full pr-20">
+                              <input
+                                type="text"
+                                value={exp.role}
+                                onChange={(e) => handleExperienceChange(expIdx, "role", e.target.value)}
+                                placeholder="Role Title"
+                                className="font-bold text-xs p-1 border border-slate-300 rounded"
+                              />
+                              <input
+                                type="text"
+                                value={exp.company}
+                                onChange={(e) => handleExperienceChange(expIdx, "company", e.target.value)}
+                                placeholder="Company"
+                                className="text-xs p-1 border border-slate-300 rounded"
+                              />
+                              <input
+                                type="text"
+                                value={exp.period}
+                                onChange={(e) => handleExperienceChange(expIdx, "period", e.target.value)}
+                                placeholder="Period"
+                                className="text-xs p-1 border border-slate-300 rounded"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <div>
+                                <span className="font-bold text-sm text-slate-900">{exp.role}</span>
+                                {exp.company && <span className="text-xs text-slate-600 ml-2">| {exp.company}</span>}
+                              </div>
+                              <span className="text-xs text-slate-500 font-mono">{exp.period}</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Bullets */}
+                        <ul className="list-disc list-inside text-xs font-sans text-slate-800 space-y-1 pl-2">
+                          {exp.bullets.map((bullet: string, bulletIdx: number) => (
+                            <li key={bulletIdx} className="leading-relaxed">
+                              {isEditing ? (
+                                <div className="inline-flex items-center space-x-2 w-11/12 my-0.5">
+                                  <input
+                                    type="text"
+                                    value={bullet}
+                                    onChange={(e) => handleBulletChange(expIdx, bulletIdx, e.target.value)}
+                                    className="w-full text-xs p-1 border border-slate-300 rounded"
+                                  />
+                                  <button
+                                    onClick={() => handleRemoveBullet(expIdx, bulletIdx)}
+                                    className="text-red-500 hover:text-red-700 text-xs px-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <span>{bullet}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        {isEditing && (
+                          <button
+                            onClick={() => handleAddBullet(expIdx)}
+                            className="text-[11px] text-indigo-600 hover:underline font-sans font-medium"
+                          >
+                            + Add bullet point
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Education */}
+                  <div className="space-y-2 pt-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wider font-sans border-b border-slate-300 pb-1 text-slate-900">
+                      Education & Qualifications
+                    </h3>
+                    {resumeData.education.map((edu: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-baseline font-sans text-xs">
+                        <div>
+                          <span className="font-bold text-slate-900">{edu.degree}</span>
+                          {edu.institution && <span className="text-slate-600 ml-2">— {edu.institution}</span>}
+                        </div>
+                        <span className="text-slate-500 font-mono">{edu.period}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Modern Executive Template */
+                <div className="bg-slate-900 border border-slate-800 text-white p-8 sm:p-12 rounded-xl shadow-2xl max-w-4xl mx-auto w-full space-y-6">
+                  <div className="border-b border-indigo-500/30 pb-4">
+                    <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">
+                      {resumeData.name}
+                    </h2>
+                    <p className="text-base text-indigo-300 font-medium">{resumeData.title}</p>
+                    <p className="text-xs text-slate-400 mt-2">
+                      {resumeData.contact.address} • {resumeData.contact.phone} • {resumeData.contact.email}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400">
+                      Executive Summary
+                    </h3>
+                    <p className="text-xs leading-relaxed text-slate-300 whitespace-pre-line">{resumeData.summary}</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 border-b border-slate-800 pb-1">
+                      Key Career Milestones
+                    </h3>
+                    {resumeData.experience.map((exp: any, idx: number) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-bold text-white">{exp.role}</span>
+                          <span className="text-indigo-400 font-mono">{exp.period}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 italic">{exp.company}</p>
+                        <ul className="list-disc list-inside text-xs text-slate-300 space-y-1 pt-1">
+                          {exp.bullets.map((b: string, bIdx: number) => (
+                            <li key={bIdx}>{b}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
+      )}
     </div>
   );
 }
