@@ -1,0 +1,100 @@
+ 
+Management. 
+▸ Ansible was used to perform some maintenance in Jenkins, Job Cleanup, Pipeline Optimization and Disk Space 
+thresholds were breached. Python and Typescript to improve Open Policy Agent and CDK8s 
+▸ Partnered with engineering teams on SLO definition and burn-rate alerting to surface reliability risks before SLA 
+and improving mean time to detection (MTTD). 
+▸ Implemented Grafana-based observability with automated alerting rules, reducing noisy, non-actionable incident cycles 
+with incidents but Production level always required a Change request. 
+▸ Use of Jenkins for Legacy applications, provisioning different filters for PubSub, some permissions could be granted 
+friction and accelerating feature delivery velocity. 
+▸ Maintained and improved multi-team CI/CD pipelines across GCP and Kubernetes environments, reducing deployment 
+Grid Dynamics —  The Home Depot Guadalajara, Mexico (Remote) 
+Oct 2024 — Oct 2025
+Site Reliability Engineer             
+capabilities without dedicated GPU cluster management. 
+▸ Python application integrated Nvidia AI inference APIs into the deployment pipeline, enabling application-layer ML 
+99.9%+ database uptime. 
+▸ Provisioned and managed a high-availability Cloud SQL instance as the backend for a Vite/React web platform, ensuring 
+eliminating idle infrastructure costs. 
+▸ Containerized the Catalog Enrichment service and deployed it to GCP Cloud Run, enabling serverless auto-scaling and 
+▸ Jenkins pipelines deploying IAM permissions, Quality Assurance in combination with Maven. 
+time by 60% and reducing manual intervention errors.  
+▸ Architected GitHub Actions CI/CD pipelines that standardized release processes across teams, cutting deployment lead 
+Grid Dynamics Guadalajara, Mexico (Remote) 
+Oct 2025 — Present
+DevOps Engineer            
+PROFESSIONAL EXPERIENCE 
+Messaging: Cloud Pub/Sub  ·  RabbitMQ  ·  IBM MQ 
+SRE Practices: SLI/SLO/SLA design  ·  Incident Management  ·  Chaos Engineering  ·  CoE documentation 
+IaC & Languages: Terraform  ·  HCL  ·  Python  ·  Bash  ·  SQL  ·  Java  ·   
+Observability: Grafana  ·  Splunk  ·  Elastic Stack  ·  New Relic  ·  Zabbix  ·  Graphite 
+Container Orchestration: Kubernetes (GKE, EKS)  ·  Helm  ·  Docker  ·  Cloud Run (serverless) 
+CI/CD & Automation: GitHub Actions  ·  ArgoCD  ·  Spinnaker  ·  Jenkins  ·  GitOps Workflows  ·  Maven  ·   
+Cloud Platforms: GCP (GKE, Cloud Run, Pub/Sub, Cloud SQL, Artifact Registry)  ·  AWS (EKS, IAM, ECR) 
+CORE COMPETENCIES 
+Stack, New Relic). 
+Kubernetes (GKE, EKS), Infrastructure as Code (Terraform, Helm, ARM), and observability pipelines (Grafana, Splunk, Elastic 
+through proactive alerting and incident engineering. Google Cloud Professional Cloud Architect. Brings deep expertise in 
+$10M+ in annual monitoring vendor costs via open-source observability tooling, and cut SLA penalty exposure by 25%+ 
+platforms on GCP and AWS. Delivered a 60% reduction in deployment lead time through CI/CD modernization, eliminated 
+Site Reliability Engineer and DevOps Engineer with 8 years of experience building and operating highly available, cloud-native 
+PROFESSIONAL SUMMARY 
+ 
++52 811 821 3655  ·  enriquefariasrdz@gmail.com  ·  Monterrey, Nuevo León, MX  ·  Open to Remote  ·  Portfolio  ·  LinkedIn 
+ 
+Site Reliability Engineer  ·  DevOps Engineer
+ 
+ENRIQUE FARIAS RODRIGUEZ
+----------------Page (0) Break----------------
+Instituto Regiomontano de Hotelería A.C.  ·  Monterrey, Mexico  ·  GPA 3.7 
+BBA —  Business Administration & Tourism1998 — 2002 
+EDUCATION 
+Google Cloud Professional Cloud Architect —  Google Cloud Valid through Feb 2028 
+CERTIFICATIONS 
+operational excellence. 
+▸ Received QAPM CIO Consultant Award (Morgan Stanley, Aug 2015) and Employee of the Year (Atos, 2011) for 
+level. 
+▸ Trained new team leaders in cross-functional incident coordination and promoted multiple trainees to senior engineer 
+fault-tolerant architecture design. 
+▸ Led production support for 30+ global Java/Scala environments; managed disaster recovery, on-call rotations, and 
+25%+. 
+▸ Designed Splunk searches and alert logic that detected network anomalies early, reducing SLA penalty exposure by 
+TCS —  Morgan Stanley Guadalajara, Mexico 
+Nov 2013 — Nov 2017
+Splunk Developer / Team Lead —  Production Support              
+access provisioning time. 
+▸ Defined role-based dashboards per department and integrated SSO with granular permission inheritance, reducing 
+Canada. 
+▸ Monitored 100K+ on-premises servers and 200K+ Azure services/instances across all Staples stores in the US and 
+licensing costs. 
+▸ Replaced legacy monitoring tooling with a distributed, HA Splunk architecture, eliminating $10M+ in annual vendor 
+Softtek —  Staples Guadalajara, Mexico 
+Nov 2017 — Mar 2020
+DevOps Engineer (Observability)             
+anomaly detection. 
+▸ Engineered a high-availability database architecture with encryption at rest and Grafana health dashboards for 
+cost-tracking workloads. 
+▸ Built multi-environment Azure deployments using ARM templates and Azure DevOps pipelines for enterprise 
+Softtek Corporate Guadalajara, Mexico 
+Mar 2020 — Sep 2020
+DevOps Engineer              
+data pipeline latency. 
+▸ Developed Python integrations to route application metrics through RabbitMQ into the observability stack, reducing 
+multiple environments. 
+▸ Managed SSL certificate lifecycle via Helm and Kubernetes Secrets, eliminating certificate expiry incidents across 
+production health visibility. 
+▸ Built real-time metrics pipelines and alerting for gaming backends using Graphite and Grafana, enabling 24/7 
+Softtek —  Electronic Arts Guadalajara, Mexico 
+Sep 2020 — Dec 2021
+DevOps / Observability Engineer              
+stakeholders. 
+▸ Designed SLI/SLO dashboards in Grafana providing real-time reliability visibility for product and engineering 
+eliminate incident recurrence. 
+▸ Led incident response for P1/P2 events and authored Correction of Error (CoE) documents adopted org-wide to 
+incidents to restore service within SLA windows. 
+▸ Operated a GKE-based e-commerce platform at scale; resolved high-severity latency, throughput, and bot-attack 
+Grid Dynamics Monterrey, Mexico 
+Dec 2021 — Oct 2024
+Site Reliability Engineer             
+----------------Page (1) Break----------------
